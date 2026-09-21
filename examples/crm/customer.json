@@ -2,6 +2,7 @@
   "name": "customer",
   "label": "Customer",
   "module": "CRM",
+  "autoname": "format:CUST-{#####}",
   "fields": [
     { "fieldtype": "Section Break", "label": "Details" },
     { "fieldname": "customer_name", "label": "Customer Name", "fieldtype": "Data", "reqd": true, "in_list_view": true },

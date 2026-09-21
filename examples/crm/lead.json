@@ -2,6 +2,7 @@
   "name": "lead",
   "label": "Lead",
   "module": "CRM",
+  "autoname": "format:LEAD-{#####}",
   "fields": [
     { "fieldname": "lead_name", "label": "Lead Name", "fieldtype": "Data", "reqd": true, "in_list_view": true },
     { "fieldname": "phone", "label": "Phone", "fieldtype": "Data", "length": 20, "search_index": true },

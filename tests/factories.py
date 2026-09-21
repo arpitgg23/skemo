@@ -3,7 +3,22 @@
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
+from dhancha.documents import Records
 from dhancha.meta import DocField, DocType
+
+
+class RecordsClient:
+    """Calls Records methods, each in its own transaction, like one API request each."""
+
+    def __init__(self, engine: Engine) -> None:
+        self.engine = engine
+
+    def __getattr__(self, method: str):
+        def call(*args, **kwargs):
+            with self.engine.begin() as conn:
+                return getattr(Records.load(conn), method)(*args, **kwargs)
+
+        return call
 
 
 def field(fieldname: str, fieldtype: str = "Data", **props) -> DocField:

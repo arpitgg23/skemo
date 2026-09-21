@@ -6,7 +6,7 @@ engine only manages tab_* tables and never touches these.
 
 from __future__ import annotations
 
-from sqlalchemy import BigInteger, Column, DateTime, MetaData, String, Table, Text, func
+from sqlalchemy import BigInteger, Column, DateTime, MetaData, String, Table, Text, func, inspect
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.engine import Connection, Engine
 
@@ -50,6 +50,17 @@ sys_archive = Table(
 )
 
 
-def install_system_tables(bind: Engine | Connection) -> None:
-    """Create any missing system tables. Safe to run repeatedly."""
+# Counters for autoname "format:" patterns, one row per series, e.g. "INV-2026-#".
+sys_series = Table(
+    "sys_series",
+    system_metadata,
+    Column("series", String(140), primary_key=True),
+    Column("current", BigInteger, nullable=False),
+)
+
+
+def install_system_tables(bind: Engine | Connection) -> list[str]:
+    """Create any missing system tables and return their names. Safe to run repeatedly."""
+    existing = set(inspect(bind).get_table_names())
     system_metadata.create_all(bind)
+    return [name for name in system_metadata.tables if name not in existing]

@@ -132,7 +132,9 @@ def delete_doctype_command(name: str, site: SiteOption = None, yes: ConfirmOptio
 def migrate_command(site: SiteOption = None) -> None:
     """Install missing system tables and re-sync every table from the stored metadata."""
     with _errors():
-        result = sync_site(_engine(site))
+        installed, result = sync_site(_engine(site))
+    if installed:
+        typer.echo(f"Installed system tables: {', '.join(installed)}")
     _report(result)
 
 

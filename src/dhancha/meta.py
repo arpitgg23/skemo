@@ -4,15 +4,25 @@ from __future__ import annotations
 
 import re
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
-from .fieldtypes import FIELD_TYPES
+from .fieldtypes import DEFAULT_LENGTH, FIELD_TYPES, value_adapter
+from .naming import autoname_problem
 
 IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]*$")
 TABLE_PREFIX = "tab_"
 MAX_IDENTIFIER = 63  # Postgres silently truncates longer names
 # Every DocType table gets these columns, so fields can't use the names.
 STANDARD_COLUMNS = frozenset({"id", "name", "owner", "created_at", "modified_at", "modified_by"})
+# Defaults worked out when a record is created, instead of a fixed value.
+DYNAMIC_DEFAULTS = {"Date": "today", "Datetime": "now"}
 
 
 def _title(identifier: str) -> str:
@@ -39,6 +49,16 @@ class DocField(BaseModel):
     @property
     def has_column(self) -> bool:
         return FIELD_TYPES[self.fieldtype].has_column
+
+    @property
+    def choices(self) -> tuple[str, ...]:
+        """Select choices: the non-blank lines of options."""
+        return tuple(line.strip() for line in (self.options or "").splitlines() if line.strip())
+
+    @property
+    def has_dynamic_default(self) -> bool:
+        default = (self.default or "").strip().lower()
+        return default == DYNAMIC_DEFAULTS.get(self.fieldtype)
 
     @model_validator(mode="after")
     def _validate(self) -> DocField:
@@ -67,8 +87,18 @@ class DocField(BaseModel):
             if not IDENTIFIER.match(options):
                 raise ValueError(f"Link field {name!r} must name a DocType in options")
             self.options = options
+        if self.fieldtype == "Select" and any(len(c) > DEFAULT_LENGTH for c in self.choices):
+            raise ValueError(f"Select field {name!r} has a choice over {DEFAULT_LENGTH} characters")
         if self.length is not None and self.fieldtype != "Data":
             raise ValueError(f"length only applies to Data fields ({name!r} is {self.fieldtype})")
+        if self.default is not None and not self.has_dynamic_default:
+            try:
+                value_adapter(self).validate_python(self.default)
+            except ValidationError as e:
+                raise ValueError(
+                    f"default {self.default!r} doesn't suit {self.fieldtype} field {name!r}: "
+                    f"{e.errors()[0]['msg']}"
+                ) from None
         if not self.label:
             self.label = _title(name)
         return self
@@ -81,6 +111,7 @@ class DocType(BaseModel):
     label: str = ""
     module: str = "Core"
     description: str | None = None
+    autoname: str = "hash"  # how records are named; see naming.py
     fields: list[DocField] = Field(default_factory=list)
 
     @field_validator("name")
@@ -102,6 +133,9 @@ class DocType(BaseModel):
             if f.fieldname in seen:
                 raise ValueError(f"duplicate fieldname {f.fieldname!r}")
             seen.add(f.fieldname)
+        problem = autoname_problem(self.autoname, {f.fieldname for f in self.data_fields})
+        if problem:
+            raise ValueError(problem)
         if not self.label:
             self.label = _title(self.name)
         return self

@@ -79,11 +79,14 @@ def delete_doctype(engine: Engine, name: str, *, actor: str = DEFAULT_ACTOR) -> 
         return sync_schema(conn, current.values(), actor=actor)
 
 
-def sync_site(engine: Engine, *, actor: str = DEFAULT_ACTOR) -> SyncResult:
-    """Install missing system tables and re-sync every table from the stored metadata."""
+def sync_site(engine: Engine, *, actor: str = DEFAULT_ACTOR) -> tuple[list[str], SyncResult]:
+    """Install missing system tables, then re-sync every table from the stored metadata.
+
+    Returns the names of the system tables it installed, and the sync result.
+    """
     with engine.begin() as conn:
-        install_system_tables(conn)
-        return sync_schema(conn, load_doctypes(conn).values(), actor=actor)
+        installed = install_system_tables(conn)
+        return installed, sync_schema(conn, load_doctypes(conn).values(), actor=actor)
 
 
 def _check_links(doctype: DocType, known: Mapping[str, DocType]) -> None:

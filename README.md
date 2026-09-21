@@ -5,11 +5,11 @@
 A metadata-driven framework for building ERPs and CRMs, in the spirit of
 [Frappe](https://frappe.io/framework). You describe a form (a **DocType**): its fields,
 their types, and which ones are required. Dhancha creates and maintains the Postgres table
-for it. Later milestones add the REST API, the screens and a drag-and-drop builder, all
-driven by the same metadata.
+for it and serves a REST API for its records. Later milestones add the screens and a
+drag-and-drop builder, all driven by the same metadata.
 
-> **Status: M1 (auto-tables) is done.** There's no record API, builder or login yet, so
-> don't expose the server to the internet.
+> **Status: M2 (records API) is done.** There's no builder or login yet, so don't expose
+> the server to the internet.
 
 ## How it works
 
@@ -78,6 +78,7 @@ npm run dev                          # Desk on http://localhost:5173
 {
   "name": "deal",
   "module": "CRM",
+  "autoname": "format:DEAL-{YYYY}-{####}",
   "fields": [
     { "fieldname": "title", "fieldtype": "Data", "reqd": true },
     { "fieldname": "customer", "fieldtype": "Link", "options": "customer" },
@@ -101,8 +102,51 @@ npm run dev                          # Desk on http://localhost:5173
 | Section Break / Column Break | none | layout only |
 
 Field properties: `label`, `reqd`, `unique`, `search_index`, `in_list_view`, `read_only`,
-`hidden`, `default`, `description`. Every table also gets `id`, `name` (unique),
-`owner`, `created_at`, `modified_at` and `modified_by`.
+`hidden`, `default` (`Today` / `Now` work for dates), `description`. Every table also gets
+`id`, `name` (unique), `owner`, `created_at`, `modified_at` and `modified_by`.
+
+## Naming records
+
+Every record has a unique, human-readable `name`, which is also what Link fields store. The
+DocType's `autoname` decides how names are made:
+
+| autoname | Example |
+|---|---|
+| `hash` (default) | `3f9c01b2e7` |
+| `format:INV-{YYYY}-{#####}` | `INV-2026-00001`. The counter restarts each year and never skips a number, even when a save fails. |
+| `field:gstin` | the record's GSTIN |
+| `prompt` | typed in when the record is created, e.g. `INV/24-25/001` |
+
+Placeholders: `{YYYY}` `{YY}` `{MM}` `{DD}`, plus one counter like `{####}`.
+
+## Records API
+
+Every DocType gets the same five endpoints (the same URL shape as Frappe):
+
+| Method | URL | What it does |
+|---|---|---|
+| GET | `/api/resource/{doctype}` | List, with `fields`, `filters`, `order_by`, `limit`, `offset` |
+| POST | `/api/resource/{doctype}` | Create |
+| GET | `/api/resource/{doctype}/{name}` | Read |
+| PUT | `/api/resource/{doctype}/{name}` | Update only the fields you send |
+| DELETE | `/api/resource/{doctype}/{name}` | Delete; the record is archived first |
+
+Open **http://127.0.0.1:8000/docs** to try them in the browser.
+
+- **Validation comes from the fields**: types, required fields, lengths, Select choices, and
+  links that must point at real records. Every problem is reported at once:
+  `422 {"detail": "Validation failed", "errors": [{"field": "customer", "message": "Customer 'CUST-9999' doesn't exist"}]}`
+- **409 Conflict** covers a duplicate unique value, deleting a record that others link to, or
+  an edit that clashes with someone else's. To get that last check, send back the
+  `modified_at` you read.
+- **Filters** are JSON: `{"stage": "Open"}` or
+  `[["amount", ">", 1000], ["stage", "in", ["Open", "Won"]], ["email", "is", "set"]]`.
+  Operators: `= != < <= > >= like` (ignores case, `%` wildcard) `not like in` `not in is`.
+- `fields` is comma-separated or `*`; by default you get `name` plus the `in_list_view`
+  fields. `order_by` looks like `amount desc`. Listing returns `{"data": [...], "total": n}`.
+
+After upgrading Dhancha, run `dhancha migrate` on existing sites so they get any new system
+tables.
 
 ## Commands
 
@@ -114,7 +158,7 @@ Field properties: `label`, `reqd`, `unique`, `search_index`, `in_list_view`, `re
 | `dhancha delete-doctype NAME --yes` | Delete a DocType; its rows are archived, then the table is dropped |
 | `dhancha migrate` | Re-sync every table from the stored metadata |
 | `dhancha schema-log` | Show recent schema changes |
-| `dhancha serve` | Run the API (`/api/health`, `/api/meta/doctypes`, `/api/meta/schema-log`) |
+| `dhancha serve` | Run the API: records under `/api/resource`, metadata under `/api/meta` |
 | `dhancha drop-site NAME --yes` | Delete a site and its database |
 
 ## Tests
@@ -132,7 +176,7 @@ throwaway database. Set `DHANCHA_TEST_DB_URL` to use a different server.
 |---|---|---|
 | M0 | Skeleton: API, desk, Postgres, CI, sites | done |
 | M1 | Metadata, 10 field types, schema sync engine + 4 guards | done |
-| M2 | Generic REST API with validation from fields | |
+| M2 | Records REST API: validation from fields, naming series, link and edit-clash checks | done |
 | M3 | Desk: list and form screens drawn from metadata | |
 | M4 | Drag-and-drop builder: app map, form builder, live preview | |
 | M5 | Login, roles, permissions per DocType | |

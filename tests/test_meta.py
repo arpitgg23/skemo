@@ -53,6 +53,50 @@ def test_data_fields_need_a_fieldname_but_layout_fields_do_not():
         DocField(fieldtype="Data")
 
 
+@pytest.mark.parametrize(
+    "autoname", ["hash", "prompt", "field:gstin", "format:INV-{YYYY}-{#####}", "format:{###}"]
+)
+def test_valid_autonames(autoname):
+    doctype("invoice", field("gstin"), autoname=autoname)
+
+
+@pytest.mark.parametrize(
+    "autoname",
+    [
+        "random",
+        "field:missing",
+        "format:",
+        "format:INV-{YYYY}",  # no counter
+        "format:{##}-{##}",  # two counters
+        "format:INV-{year}-{##}",
+        "format:INV-{##}}",
+    ],
+)
+def test_bad_autonames_are_rejected(autoname):
+    with pytest.raises(ValidationError, match="autoname"):
+        doctype("invoice", field("gstin"), autoname=autoname)
+
+
+@pytest.mark.parametrize(
+    ("fieldtype", "props", "default"),
+    [
+        ("Int", {}, "abc"),
+        ("Select", {"options": "Open\nClosed"}, "Maybe"),
+        ("Check", {}, "perhaps"),
+        ("Date", {}, "tomorrow"),
+        ("Data", {"length": 3}, "too long"),
+    ],
+)
+def test_defaults_must_suit_their_field(fieldtype, props, default):
+    with pytest.raises(ValidationError, match="default"):
+        field("f", fieldtype, default=default, **props)
+
+
+def test_today_and_now_are_allowed_as_defaults():
+    field("on", "Date", default="Today")
+    field("at", "Datetime", default="now")
+
+
 def test_duplicate_fieldnames_are_rejected():
     with pytest.raises(ValidationError, match="duplicate"):
         doctype("lead", field("phone"), field("phone", "Int"))
