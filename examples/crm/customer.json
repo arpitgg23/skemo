@@ -1,0 +1,15 @@
+{
+  "name": "customer",
+  "label": "Customer",
+  "module": "CRM",
+  "fields": [
+    { "fieldtype": "Section Break", "label": "Details" },
+    { "fieldname": "customer_name", "label": "Customer Name", "fieldtype": "Data", "reqd": true, "in_list_view": true },
+    { "fieldname": "phone", "label": "Phone", "fieldtype": "Data", "length": 20, "search_index": true },
+    { "fieldname": "email", "label": "Email", "fieldtype": "Data", "unique": true },
+    { "fieldtype": "Column Break" },
+    { "fieldname": "gstin", "label": "GSTIN", "fieldtype": "Data", "length": 15, "unique": true },
+    { "fieldname": "city", "label": "City", "fieldtype": "Data", "in_list_view": true },
+    { "fieldname": "credit_limit", "label": "Credit Limit", "fieldtype": "Currency" }
+  ]
+}

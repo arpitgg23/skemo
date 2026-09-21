@@ -1,0 +1,15 @@
+{
+  "name": "lead",
+  "label": "Lead",
+  "module": "CRM",
+  "fields": [
+    { "fieldname": "lead_name", "label": "Lead Name", "fieldtype": "Data", "reqd": true, "in_list_view": true },
+    { "fieldname": "phone", "label": "Phone", "fieldtype": "Data", "length": 20, "search_index": true },
+    { "fieldname": "source", "label": "Source", "fieldtype": "Select", "options": "Walk-in\nWebsite\nReferral\nWhatsApp" },
+    { "fieldtype": "Column Break" },
+    { "fieldname": "status", "label": "Status", "fieldtype": "Select", "options": "Open\nContacted\nQualified\nLost", "default": "Open", "in_list_view": true },
+    { "fieldname": "follow_up_on", "label": "Follow Up On", "fieldtype": "Datetime" },
+    { "fieldname": "converted", "label": "Converted", "fieldtype": "Check" },
+    { "fieldname": "converted_customer", "label": "Converted Customer", "fieldtype": "Link", "options": "customer" }
+  ]
+}

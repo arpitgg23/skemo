@@ -1,0 +1,16 @@
+{
+  "name": "deal",
+  "label": "Deal",
+  "module": "CRM",
+  "fields": [
+    { "fieldname": "title", "label": "Title", "fieldtype": "Data", "reqd": true, "in_list_view": true },
+    { "fieldname": "customer", "label": "Customer", "fieldtype": "Link", "options": "customer", "reqd": true, "in_list_view": true },
+    { "fieldname": "stage", "label": "Stage", "fieldtype": "Select", "options": "Prospecting\nProposal\nNegotiation\nWon\nLost", "default": "Prospecting", "in_list_view": true },
+    { "fieldtype": "Column Break" },
+    { "fieldname": "amount", "label": "Amount", "fieldtype": "Currency" },
+    { "fieldname": "probability", "label": "Probability (%)", "fieldtype": "Int" },
+    { "fieldname": "expected_close", "label": "Expected Close", "fieldtype": "Date" },
+    { "fieldtype": "Section Break", "label": "Notes" },
+    { "fieldname": "notes", "label": "Notes", "fieldtype": "Text" }
+  ]
+}
