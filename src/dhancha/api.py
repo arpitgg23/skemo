@@ -75,17 +75,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         site: CurrentSite,
         fields: str | None = None,
         filters: str | None = None,
+        or_filters: str | None = None,
         order_by: str | None = None,
         limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = 20,
         offset: Annotated[int, Query(ge=0)] = 0,
     ) -> dict[str, Any]:
-        """List records. `fields`: comma-separated names or *; `filters`: JSON (see query.py);
-        `order_by`: e.g. "amount desc"."""
+        """List records. `fields`: comma-separated names or *; `filters` and `or_filters`: JSON
+        (see query.py); `order_by`: e.g. "amount desc"."""
         with records(site) as r:
             return r.list(
                 doctype,
                 fields=_parse_fields(fields),
                 filters=_parse_json(filters, "filters"),
+                or_filters=_parse_json(or_filters, "or_filters"),
                 order_by=order_by,
                 limit=limit,
                 offset=offset,
@@ -184,6 +186,8 @@ def _error_handler(
             return JSONResponse(
                 status_code=status, content={"detail": "Validation failed", "errors": exc.errors}
             )
+        if isinstance(exc, DocumentConflict):
+            return JSONResponse(status_code=status, content={"detail": str(exc), "code": exc.code})
         return JSONResponse(status_code=status, content={"detail": str(exc)})
 
     return handle

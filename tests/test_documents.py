@@ -155,12 +155,13 @@ def test_required_fields_cannot_be_cleared(crm):
 def test_a_stale_edit_is_refused(crm):
     loaded = crm.insert("customer", {"customer_name": "Acme"})
     crm.update("customer", "CUST-0001", {"city": "Pune"})  # someone else saves first
-    with pytest.raises(DocumentConflict, match="changed by someone else"):
+    with pytest.raises(DocumentConflict, match="changed by someone else") as caught:
         crm.update(
             "customer",
             "CUST-0001",
             {"city": "Delhi", "modified_at": loaded["modified_at"].isoformat()},
         )
+    assert caught.value.code == "stale"
     assert crm.get("customer", "CUST-0001")["city"] == "Pune"
 
 
@@ -247,6 +248,13 @@ def test_list_filters(deals, filters, expected):
     result = deals.list("deal", filters=filters, order_by="title")
     assert titles(result) == expected
     assert result["total"] == len(expected)
+
+
+def test_or_filters_match_any_and_combine_with_filters(deals):
+    either = [["title", "like", "%chair%"], ["stage", "=", "Won"]]
+    assert titles(deals.list("deal", or_filters=either, order_by="title")) == ["Chairs", "Desks"]
+    narrowed = deals.list("deal", filters=[["amount", ">", 20000]], or_filters=either)
+    assert titles(narrowed) == ["Desks"]
 
 
 def test_list_fields_ordering_and_pages(deals):

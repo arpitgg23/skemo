@@ -38,7 +38,12 @@ class DocumentNotFound(LookupError):
 
 
 class DocumentConflict(Exception):
-    """The write clashes with existing data: a duplicate, a link, or someone else's edit."""
+    """The write clashes with existing data. `code` says how: "duplicate" (a unique value is
+    taken), "linked" (other records link to it) or "stale" (someone else edited it first)."""
+
+    def __init__(self, message: str, code: str) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 class DocumentValidationError(ValueError):
@@ -109,7 +114,8 @@ class Records:
             elif seen != current["modified_at"]:
                 raise DocumentConflict(
                     f"{dt.label} {name!r} was changed by someone else after you loaded it. "
-                    "Reload it and try again."
+                    "Reload it and try again.",
+                    "stale",
                 )
 
         values = {f.fieldname: current[f.fieldname] for f in dt.data_fields} | payload
@@ -158,6 +164,7 @@ class Records:
         *,
         fields: Sequence[str] | None = None,
         filters: Any = None,
+        or_filters: Any = None,
         order_by: str | None = None,
         limit: int = 20,
         offset: int = 0,
@@ -170,7 +177,7 @@ class Records:
             raise QueryError("offset can't be negative")
         table = self._table(dt)
         query = ListQuery(dt, table)
-        conditions = query.conditions(filters)
+        conditions = query.conditions(filters) + query.any_of(or_filters)
         page = self.conn.execute(
             select(*query.columns(fields))
             .where(*conditions)
@@ -214,7 +221,7 @@ class Records:
                 stmt.returning(*public_columns(doctype, self._table(doctype)))
             )
         except IntegrityError as e:
-            raise DocumentConflict(_duplicate_message(doctype, e, values)) from e
+            raise DocumentConflict(_duplicate_message(doctype, e, values), "duplicate") from e
         return dict(result.mappings().one())
 
     def _link_errors(
@@ -249,7 +256,8 @@ class Records:
                 if linked is not None:
                     raise DocumentConflict(
                         f"can't delete {doctype.label} {name!r}: "
-                        f"{other.label} {linked!r} links to it"
+                        f"{other.label} {linked!r} links to it",
+                        "linked",
                     )
 
 

@@ -8,7 +8,8 @@ Filters are either a dict of equalities, {"stage": "Open"}, or a list of [field,
 
 Operators: = != < <= > >= like, not like, in, not in, is. `like` ignores case and uses % as the
 wildcard; `is` takes "set" or "not set". Values are converted to the field's type first, so
-dates can be given as "2026-10-01".
+dates can be given as "2026-10-01". All filters must hold; `or_filters` (same syntax) match
+when any one holds, e.g. searching the name or the title.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
-from sqlalchemy import Column, Table, Text, cast
+from sqlalchemy import Column, Table, Text, cast, or_
 from sqlalchemy.sql.elements import ColumnElement
 
 from .fieldtypes import timestamp_adapter, value_adapter
@@ -97,6 +98,11 @@ class ListQuery:
                 raise QueryError(f"each filter must be [field, operator, value], not {item!r}")
             conditions.append(self._condition(*item))
         return conditions
+
+    def any_of(self, or_filters: Any) -> list[ColumnElement[bool]]:
+        """Same syntax as filters, but a record matches if any one of them holds."""
+        conditions = self.conditions(or_filters)
+        return [or_(*conditions)] if conditions else []
 
     def ordering(self, order_by: str | None) -> list[ColumnElement[Any]]:
         """E.g. "amount desc, title". Defaults to the most recently modified first."""

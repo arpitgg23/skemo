@@ -127,6 +127,7 @@ def test_http_errors(crm_client):
     invoice = crm_client.get("/api/resource/invoice/INV/24-25/001")  # slashes in names work
     assert invoice.json()["data"]["customer"] == "CUST-0001"
 
-    assert crm_client.delete("/api/resource/customer/CUST-0001").status_code == 409  # linked
+    linked = crm_client.delete("/api/resource/customer/CUST-0001")
+    assert (linked.status_code, linked.json()["code"]) == (409, "linked")
     assert crm_client.get("/api/resource/customer", params={"filters": "{oops"}).status_code == 400
     assert crm_client.get("/api/resource/nothing").status_code == 404

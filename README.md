@@ -8,8 +8,8 @@ their types, and which ones are required. Dhancha creates and maintains the Post
 for it and serves a REST API for its records. Later milestones add the screens and a
 drag-and-drop builder, all driven by the same metadata.
 
-> **Status: M2 (records API) is done.** There's no builder or login yet, so don't expose
-> the server to the internet.
+> **Status: M3 (desk) is done.** Every DocType gets list and form screens. There's no
+> drag-and-drop builder or login yet, so don't expose the server to the internet.
 
 ## How it works
 
@@ -67,6 +67,22 @@ cd desk
 npm install
 npm run dev                          # Desk on http://localhost:5173
 ```
+
+## Desk
+
+The desk draws every screen from the metadata, so a DocType saved from the CLI appears in
+the sidebar as soon as you switch back to the browser tab, with no restart or reload.
+
+- **List:** the `in_list_view` columns, a search over ID and title, a dropdown filter for
+  each Select or Check column, click-to-sort headers and paging. The page, search, filters
+  and sort live in the URL, so reload and the back button keep them.
+- **Form:** laid out by the DocType's Section Breaks (sections) and Column Breaks (columns),
+  one input per field type. Link fields suggest records as you type, matching the ID or the
+  title. New records start with their defaults (including `Today` and `Now`).
+- **Saving:** required fields are checked in the browser first; the server's per-field errors
+  appear under each input. Ctrl+S saves. If someone else saved the record after you opened
+  it, you're told and offered a reload instead of overwriting their change. Leaving with
+  unsaved changes asks first.
 
 **Try a rename.** In `examples/crm/lead.json`, change `"phone"` to `"mobile"`, then run
 `dhancha save-doctype examples/crm/lead.json --rename phone:mobile`. You get one
@@ -138,10 +154,12 @@ Open **http://127.0.0.1:8000/docs** to try them in the browser.
   `422 {"detail": "Validation failed", "errors": [{"field": "customer", "message": "Customer 'CUST-9999' doesn't exist"}]}`
 - **409 Conflict** covers a duplicate unique value, deleting a record that others link to, or
   an edit that clashes with someone else's. To get that last check, send back the
-  `modified_at` you read.
+  `modified_at` you read. The response's `code` says which: `duplicate`, `linked` or `stale`.
 - **Filters** are JSON: `{"stage": "Open"}` or
   `[["amount", ">", 1000], ["stage", "in", ["Open", "Won"]], ["email", "is", "set"]]`.
   Operators: `= != < <= > >= like` (ignores case, `%` wildcard) `not like in` `not in is`.
+  All `filters` must hold; `or_filters` (same syntax) match when any one holds, e.g.
+  searching by ID or name.
 - `fields` is comma-separated or `*`; by default you get `name` plus the `in_list_view`
   fields. `order_by` looks like `amount desc`. Listing returns `{"data": [...], "total": n}`.
 
@@ -170,6 +188,8 @@ pytest
 Tests run against the Postgres from `docker compose`, and each test gets its own
 throwaway database. Set `DHANCHA_TEST_DB_URL` to use a different server.
 
+The desk's layout and value-conversion logic has unit tests too: `cd desk && npm test`.
+
 ## Roadmap
 
 | | Milestone | Status |
@@ -177,7 +197,7 @@ throwaway database. Set `DHANCHA_TEST_DB_URL` to use a different server.
 | M0 | Skeleton: API, desk, Postgres, CI, sites | done |
 | M1 | Metadata, 10 field types, schema sync engine + 4 guards | done |
 | M2 | Records REST API: validation from fields, naming series, link and edit-clash checks | done |
-| M3 | Desk: list and form screens drawn from metadata | |
+| M3 | Desk: list and form screens drawn from metadata | done |
 | M4 | Drag-and-drop builder: app map, form builder, live preview | |
 | M5 | Login, roles, permissions per DocType | |
 | M6 | Developer layer: DocTypes as JSON in git, `migrate`, Python hooks | |
