@@ -7,9 +7,12 @@ transaction, so either all of it happens or none of it does.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
+from pathlib import Path
 
 from sqlalchemy.engine import Engine
 
+from .apps import App, load_app, load_installed, record_app
 from .meta import DocType
 from .permissions import install_roles
 from .store import delete_definition, load_doctypes, save_definition
@@ -29,6 +32,7 @@ def save_doctypes(
     *,
     renames: Renames | None = None,
     actor: str = DEFAULT_ACTOR,
+    app: str | None = None,
 ) -> SyncResult:
     """Create or update DocTypes, then sync the tables.
 
@@ -51,7 +55,7 @@ def save_doctypes(
                 raise DocTypeError(f"renames given for {name!r}, which isn't being saved")
             _check_renames(current.get(name), proposed[name], mapping)
         for dt in batch:
-            save_definition(conn, dt)
+            save_definition(conn, dt, app=app)
         return sync_schema(conn, proposed.values(), renames=renames, actor=actor)
 
 
@@ -80,15 +84,46 @@ def delete_doctype(engine: Engine, name: str, *, actor: str = DEFAULT_ACTOR) -> 
         return sync_schema(conn, current.values(), actor=actor)
 
 
-def sync_site(engine: Engine, *, actor: str = DEFAULT_ACTOR) -> tuple[list[str], SyncResult]:
-    """Install missing system tables, then re-sync every table from the stored metadata.
+@dataclass
+class MigrationResult:
+    installed: list[str]  # system tables and columns added
+    apps: list[str]  # installed apps whose DocTypes were re-read
+    sync: SyncResult
 
-    Returns the names of the system tables it installed, and the sync result.
+
+def sync_site(engine: Engine, *, actor: str = DEFAULT_ACTOR) -> MigrationResult:
+    """Bring a site up to date: system tables, the installed apps' DocTypes, then the tables.
+
+    Re-reading the apps is what makes a DocType's JSON the source of truth: edit the file,
+    commit it, and `migrate` applies it to every site that has the app.
     """
     with engine.begin() as conn:
         installed = install_system_tables(conn)
         install_roles(conn)  # a site made before roles existed gets them here
-        return installed, sync_schema(conn, load_doctypes(conn).values(), actor=actor)
+        apps = load_installed(conn)
+        current = load_doctypes(conn)
+        for app in apps:
+            for doctype in app.doctypes():
+                current[doctype.name] = doctype
+                save_definition(conn, doctype, app=app.name)
+        for dt in current.values():
+            _check_links(dt, current)
+        return MigrationResult(
+            installed=installed,
+            apps=[app.name for app in apps],
+            sync=sync_schema(conn, current.values(), actor=actor),
+        )
+
+
+def install_app(
+    engine: Engine, path: str | Path, *, actor: str = DEFAULT_ACTOR
+) -> tuple[App, MigrationResult]:
+    """Add an app to a site and apply its DocTypes."""
+    app = load_app(path)
+    with engine.begin() as conn:
+        install_system_tables(conn)
+        record_app(conn, app)
+    return app, sync_site(engine, actor=actor)
 
 
 def _check_links(doctype: DocType, known: Mapping[str, DocType]) -> None:

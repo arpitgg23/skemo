@@ -44,7 +44,7 @@ export type CurrentUser = {
 };
 
 /** Who's signed in, on which site. Signing in and /api/auth/me both return this. */
-export type Session = { site: string; user: CurrentUser };
+export type Session = { site: string; developer_mode: boolean; user: CurrentUser };
 
 export type DocType = {
   name: string;
@@ -53,6 +53,7 @@ export type DocType = {
   table: string;
   autoname: string;
   description?: string | null;
+  app?: string | null; // the app whose files it comes from; null means the builder made it
   can: Action[]; // what the signed-in user may do with it
   fields: Field[];
   columns: Column[]; // what the table really has in Postgres
@@ -99,8 +100,9 @@ export type DocTypeDefinition = {
   fields: Field[];
 };
 
-/** The DDL a save or delete ran, and how many values were archived before dropping. */
-export type SchemaChange = { statements: string[]; archived_rows: number };
+/** The DDL a save or delete ran, how many values were archived before dropping, and the
+ * app file the DocType was written back to (developer mode only). */
+export type SchemaChange = { statements: string[]; archived_rows: number; written_to?: string | null };
 
 export class ApiError extends Error {
   readonly status: number;

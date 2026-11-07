@@ -14,9 +14,17 @@ from sqlalchemy import insert, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError, OperationalError
 
+from .apps import AppError, installed_apps, load_app, record_app
 from .auth import AuthError, create_user, find_user, roles_of, set_password, set_roles
 from .config import Settings
-from .doctypes import DocTypeError, delete_doctype, save_doctypes, sync_site
+from .doctypes import (
+    DocTypeError,
+    MigrationResult,
+    delete_doctype,
+    install_app,
+    save_doctypes,
+    sync_site,
+)
 from .meta import DocType
 from .permissions import ACTIONS, grant, install_roles, revoke
 from .sites import (
@@ -29,6 +37,7 @@ from .sites import (
     new_site,
     set_default_site,
 )
+from .store import app_owners, load_doctypes, save_definition
 from .sync import SchemaSyncError, SyncResult
 from .system_tables import sys_permission, sys_role, sys_schema_log, sys_user
 
@@ -250,12 +259,62 @@ def delete_doctype_command(name: str, site: SiteOption = None, yes: ConfirmOptio
 
 @app.command("migrate")
 def migrate_command(site: SiteOption = None) -> None:
-    """Install missing system tables and re-sync every table from the stored metadata."""
+    """Bring a site up to date: system tables, the installed apps' DocTypes, then the tables."""
     with _errors():
-        installed, result = sync_site(_engine(site))
-    if installed:
-        typer.echo(f"Installed system tables: {', '.join(installed)}")
-    _report(result)
+        result = sync_site(_engine(site))
+    _report_migration(result)
+
+
+@app.command("install-app")
+def install_app_command(
+    path: Annotated[Path, typer.Argument(help="The app folder, the one with app.json")],
+    site: SiteOption = None,
+) -> None:
+    """Add an app to a site and apply the DocTypes it ships."""
+    with _errors():
+        installed, result = install_app(_engine(site), path)
+    typer.echo(
+        f"Installed {installed.title} ({installed.name} {installed.version}) from {installed.path}"
+    )
+    _report_migration(result)
+
+
+@app.command("list-apps")
+def list_apps_command(site: SiteOption = None) -> None:
+    """Show the apps installed on a site."""
+    with _errors(), _engine(site).connect() as conn:
+        apps = installed_apps(conn)
+        owners = app_owners(conn)
+    if not apps:
+        typer.echo("No apps installed. Add one with: dhancha install-app <path>")
+    for installed in apps:
+        doctypes = sorted(name for name, owner in owners.items() if owner == installed.name)
+        typer.echo(f"{installed.name} {installed.version}  {installed.path}")
+        typer.echo(f"  DocTypes: {', '.join(doctypes) or 'none'}")
+        if installed.missing:
+            typer.secho("  the folder isn't there any more", fg=typer.colors.YELLOW)
+
+
+@app.command("export-doctype")
+def export_doctype_command(
+    name: Annotated[str, typer.Argument(help="The DocType to write out")],
+    to: Annotated[Path, typer.Option("--to", help="The app folder to write it into")],
+    site: SiteOption = None,
+) -> None:
+    """Write a DocType made in the builder into an app's files, so it can go into git."""
+    with _errors():
+        target = load_app(to)
+        engine = _engine(site)
+        with engine.connect() as conn:
+            doctype = load_doctypes(conn).get(name)
+        if doctype is None:
+            raise DocTypeError(f"there's no DocType named {name!r} on this site")
+        path = target.write_doctype(doctype)
+        with engine.begin() as conn:
+            save_definition(conn, doctype, app=target.name)
+            record_app(conn, target)
+    typer.echo(f"Wrote {path}")
+    typer.echo(f"{name} now belongs to {target.name}; commit the file to share it.")
 
 
 @app.command("schema-log")
@@ -330,6 +389,14 @@ def _parse_renames(specs: list[str], doctypes: list[DocType]) -> dict[str, dict[
     return renames
 
 
+def _report_migration(result: MigrationResult) -> None:
+    if result.installed:
+        typer.echo(f"Installed: {', '.join(result.installed)}")
+    if result.apps:
+        typer.echo(f"Apps read: {', '.join(result.apps)}")
+    _report(result.sync)
+
+
 def _report(result: SyncResult) -> None:
     if not result.changed:
         typer.echo("Tables already match the metadata. Nothing to change.")
@@ -346,7 +413,7 @@ def _errors() -> Iterator[None]:
     """Turn expected failures into a one-line error instead of a traceback."""
     try:
         yield
-    except (AuthError, DocTypeError, SchemaSyncError, SiteError, ValueError) as e:
+    except (AppError, AuthError, DocTypeError, SchemaSyncError, SiteError, ValueError) as e:
         _fail(str(e))
     except IntegrityError as e:
         # A constraint we didn't check for: show the database's reason, not a traceback.

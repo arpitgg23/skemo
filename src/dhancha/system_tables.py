@@ -19,6 +19,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
     inspect,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.engine import Connection, Engine
@@ -32,8 +33,21 @@ sys_doctype = Table(
     Column("name", String(63), primary_key=True),
     Column("module", String(140), nullable=False),
     Column("definition", JSONB, nullable=False),
+    # The app whose files this DocType comes from; NULL means the builder made it here.
+    Column("app", String(140)),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("modified_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+# The apps installed on this site, and where their folders are on this machine.
+sys_app = Table(
+    "sys_app",
+    system_metadata,
+    Column("name", String(140), primary_key=True),
+    Column("title", String(140), nullable=False, server_default=""),
+    Column("version", String(40), nullable=False, server_default="0.0.0"),
+    Column("path", Text, nullable=False),
+    Column("installed_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
 # Guard 3: every DDL statement the sync engine ran, grouped per save by batch_id.
@@ -129,7 +143,31 @@ sys_session = Table(
 
 
 def install_system_tables(bind: Engine | Connection) -> list[str]:
-    """Create any missing system tables and return their names. Safe to run repeatedly."""
-    existing = set(inspect(bind).get_table_names())
+    """Bring the system tables up to date and return what was added.
+
+    Creates missing tables, and adds columns a newer Dhancha expects on tables that are
+    already there. Only ever additive: nothing is dropped or retyped.
+    """
+    inspector = inspect(bind)
+    existing = set(inspector.get_table_names())
+    added = [name for name in system_metadata.tables if name not in existing]
     system_metadata.create_all(bind)
-    return [name for name in system_metadata.tables if name not in existing]
+    for name, table in system_metadata.tables.items():
+        if name in added:
+            continue
+        have = {c["name"] for c in inspector.get_columns(name)}
+        for column in table.columns:
+            if column.name not in have:
+                _add_column(bind, name, column)
+                added.append(f"{name}.{column.name}")
+    return added
+
+
+def _add_column(bind: Engine | Connection, table: str, column: Column) -> None:
+    preparer = bind.dialect.identifier_preparer
+    clause = f"{preparer.quote(column.name)} {column.type.compile(bind.dialect)}"
+    if column.server_default is not None:
+        clause += f" DEFAULT {column.server_default.arg.text}"  # type: ignore[union-attr]
+    if not column.nullable:
+        clause += " NOT NULL"
+    bind.execute(text(f"ALTER TABLE {preparer.quote(table)} ADD COLUMN {clause}"))

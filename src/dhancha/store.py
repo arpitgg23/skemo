@@ -17,10 +17,11 @@ def load_doctypes(conn: Connection) -> dict[str, DocType]:
     return {dt.name: dt for dt in map(DocType.model_validate, definitions)}
 
 
-def save_definition(conn: Connection, doctype: DocType) -> None:
+def save_definition(conn: Connection, doctype: DocType, *, app: str | None = None) -> None:
+    """Store a DocType. `app` marks it as coming from that app's files."""
     definition = doctype.model_dump(mode="json", exclude_defaults=True)
     stmt = insert(sys_doctype).values(
-        name=doctype.name, module=doctype.module, definition=definition
+        name=doctype.name, module=doctype.module, definition=definition, app=app
     )
     conn.execute(
         stmt.on_conflict_do_update(
@@ -28,10 +29,19 @@ def save_definition(conn: Connection, doctype: DocType) -> None:
             set_={
                 "module": stmt.excluded.module,
                 "definition": stmt.excluded.definition,
+                "app": stmt.excluded.app,
                 "modified_at": func.now(),
             },
         )
     )
+
+
+def app_owners(conn: Connection) -> dict[str, str]:
+    """DocType name -> the app it belongs to, for the ones that come from an app."""
+    rows = conn.execute(
+        select(sys_doctype.c.name, sys_doctype.c.app).where(sys_doctype.c.app.is_not(None))
+    ).all()
+    return {row.name: row.app for row in rows}
 
 
 def delete_definition(conn: Connection, name: str) -> None:

@@ -20,6 +20,10 @@ class Settings:
     # Send the session cookie only over HTTPS. Off by default so http://localhost works;
     # set DHANCHA_COOKIE_SECURE=1 anywhere the site is served over HTTPS.
     cookie_secure: bool = False
+    # On: the builder may edit a DocType that belongs to an app, and writes the JSON back
+    # to the app's folder for you to commit. Off: those DocTypes are read-only in the
+    # browser, because the files are the truth.
+    developer_mode: bool = False
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -28,4 +32,5 @@ class Settings:
             sites_dir=Path(os.environ.get("DHANCHA_SITES_DIR", "sites")).resolve(),
             session_days=int(os.environ.get("DHANCHA_SESSION_DAYS", "14")),
             cookie_secure=os.environ.get("DHANCHA_COOKIE_SECURE", "") not in ("", "0", "false"),
+            developer_mode=os.environ.get("DHANCHA_DEVELOPER_MODE", "") not in ("", "0", "false"),
         )

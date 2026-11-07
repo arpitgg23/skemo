@@ -18,8 +18,11 @@ from sqlalchemy import update as update_stmt
 from sqlalchemy.engine import Connection, RowMapping
 from sqlalchemy.exc import IntegrityError
 
+from .apps import site_hooks
 from .auth import ADMIN, User
+from .errors import DocumentConflict, DocumentNotFound, DocumentValidationError, Errors
 from .fieldtypes import timestamp_adapter, value_adapter
+from .hooks import Doc, DocumentHooks, run_hooks
 from .meta import DocField, DocType
 from .naming import MAX_NAME, make_name
 from .permissions import Action, Permissions
@@ -32,28 +35,14 @@ DEFAULT_USER = ADMIN
 # except modified_at on update, which is compared to catch concurrent edits.
 SYSTEM_COLUMNS = ("owner", "created_at", "modified_at", "modified_by")
 
-Errors = list[dict[str, str]]
-
-
-class DocumentNotFound(LookupError):
-    pass
-
-
-class DocumentConflict(Exception):
-    """The write clashes with existing data. `code` says how: "duplicate" (a unique value is
-    taken), "linked" (other records link to it) or "stale" (someone else edited it first)."""
-
-    def __init__(self, message: str, code: str) -> None:
-        super().__init__(message)
-        self.code = code
-
-
-class DocumentValidationError(ValueError):
-    """Values that don't fit the DocType. `errors` lists every problem as {field, message}."""
-
-    def __init__(self, errors: Errors) -> None:
-        self.errors = errors
-        super().__init__("; ".join(f"{e['field']}: {e['message']}" for e in errors))
+# Re-exported so `from dhancha.documents import DocumentNotFound` still works.
+__all__ = [
+    "DEFAULT_USER",
+    "DocumentConflict",
+    "DocumentNotFound",
+    "DocumentValidationError",
+    "Records",
+]
 
 
 class Records:
@@ -70,10 +59,13 @@ class Records:
         *,
         user: str = DEFAULT_USER,
         permissions: Permissions | None = None,
+        hooks: Mapping[str, DocumentHooks] | None = None,
     ) -> None:
         self.conn = conn
         self.doctypes = doctypes
         self.user = user
+        # An app's Python hooks, by DocType. Loaded once per request by Records.load.
+        self.hooks = hooks or {}
         # No permissions given means the caller is trusted (the CLI, or a test).
         self.permissions = permissions or Permissions(
             user=user, roles=frozenset(), rules={}, admin=True
@@ -82,7 +74,12 @@ class Records:
 
     @classmethod
     def load(
-        cls, conn: Connection, *, user: str | User = DEFAULT_USER, check_permissions: bool = False
+        cls,
+        conn: Connection,
+        *,
+        user: str | User = DEFAULT_USER,
+        check_permissions: bool = False,
+        with_hooks: bool = True,
     ) -> Records:
         name = user.name if isinstance(user, User) else user
         permissions = None
@@ -90,7 +87,14 @@ class Records:
             if not isinstance(user, User):
                 raise ValueError("checking permissions needs the User, not just their name")
             permissions = Permissions.for_user(conn, user)
-        return cls(conn, load_doctypes(conn), user=name, permissions=permissions)
+        doctypes = load_doctypes(conn)
+        return cls(
+            conn,
+            doctypes,
+            user=name,
+            permissions=permissions,
+            hooks=site_hooks(conn) if with_hooks else {},
+        )
 
     def insert(
         self, doctype: str, data: Mapping[str, Any], *, today: date | None = None
@@ -108,12 +112,24 @@ class Records:
         if errors:
             raise DocumentValidationError(errors)
 
+        before_hooks = dict(cleaned)
+        doc = self._doc(dt, cleaned, is_new=True)
+        run_hooks(self.hooks.get(doctype), ("before_insert", "before_save", "validate"), doc)
+        # Hooks may have changed values, so check those the same way as anything else.
+        cleaned, errors = _clean(dt, doc.values)
+        errors += self._link_errors(dt, cleaned, _differs(cleaned, before_hooks))
+        if errors:
+            raise DocumentValidationError(errors)
+
         if dt.autoname == "prompt":
             name = given_name.strip()
         else:
             name = make_name(self.conn, dt, cleaned, today=today)
         row = {**cleaned, "name": name, "owner": self.user, "modified_by": self.user}
-        return self._write(dt, insert(self._table(dt)).values(row), row)
+        written = self._write(dt, insert(self._table(dt)).values(row), row)
+        doc.name = name
+        doc.values = dict(written)
+        return self._after(dt, doc, ("after_insert", "after_save"), written)
 
     def get(self, doctype: str, name: str) -> dict[str, Any]:
         return _public(self._fetch(self._doctype(doctype, "read"), name))
@@ -144,8 +160,19 @@ class Records:
         values = {f.fieldname: current[f.fieldname] for f in dt.data_fields} | payload
         cleaned, field_errors = _clean(dt, values)
         errors += field_errors
-        changed = {k: cleaned[k] for k in payload if k in cleaned and cleaned[k] != current[k]}
-        errors += self._link_errors(dt, cleaned, changed.keys())
+        errors += self._link_errors(
+            dt, cleaned, [k for k in payload if cleaned.get(k) != current[k]]
+        )
+        if errors:
+            raise DocumentValidationError(errors)
+
+        before_hooks = dict(cleaned)
+        doc = self._doc(dt, cleaned, is_new=False, name=name, previous=current)
+        run_hooks(self.hooks.get(doctype), ("before_update", "before_save", "validate"), doc)
+        cleaned, errors = _clean(dt, doc.values)
+        # Whatever a hook changed counts as part of this save, and is checked like the rest.
+        changed = {k: v for k, v in cleaned.items() if v != current[k]}
+        errors += self._link_errors(dt, cleaned, _differs(cleaned, before_hooks))
         if errors:
             raise DocumentValidationError(errors)
         if not changed:
@@ -157,13 +184,17 @@ class Records:
             .where(table.c.id == current["id"])
             .values({**changed, "modified_at": func.now(), "modified_by": self.user})
         )
-        return self._write(dt, stmt, changed)
+        written = self._write(dt, stmt, changed)
+        doc.values = dict(written)
+        return self._after(dt, doc, ("after_update", "after_save"), written)
 
     def delete(self, doctype: str, name: str) -> None:
         """Delete a record after archiving it. Refused while other records link to it."""
         dt = self._doctype(doctype, "delete")
         current = self._fetch(dt, name, lock=True)
         self._check_not_linked(dt, name, current["id"])
+        doc = self._doc(dt, dict(current), is_new=False, name=name, previous=current)
+        run_hooks(self.hooks.get(doctype), ("before_delete",), doc)
         table = self._table(dt)
         quoted = self.conn.dialect.identifier_preparer.quote(table.name)
         self.conn.execute(
@@ -180,6 +211,7 @@ class Records:
             },
         )
         self.conn.execute(delete(table).where(table.c.id == current["id"]))
+        run_hooks(self.hooks.get(doctype), ("after_delete",), doc)
 
     def list(
         self,
@@ -215,6 +247,39 @@ class Records:
             select(func.count()).select_from(table).where(*conditions)
         ).scalar_one()
         return {"data": data, "total": total}
+
+    def _after(
+        self, doctype: DocType, doc: Doc, names: tuple[str, ...], written: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Run the after-save hooks, then return the record as it now stands.
+
+        A hook may write to the record itself, so the row is read back rather than
+        returning what the save alone produced.
+        """
+        hooks = self.hooks.get(doctype.name)
+        if hooks is None:
+            return written
+        run_hooks(hooks, names, doc)
+        return _public(self._fetch(doctype, str(doc.name)))
+
+    def _doc(
+        self,
+        doctype: DocType,
+        values: dict[str, Any],
+        *,
+        is_new: bool,
+        name: str | None = None,
+        previous: Mapping[str, Any] | None = None,
+    ) -> Doc:
+        return Doc(
+            doctype,
+            values,
+            is_new=is_new,
+            user=self.user,
+            conn=self.conn,
+            name=name,
+            previous=previous,
+        )
 
     def _doctype(self, name: str, action: Action | None = None) -> DocType:
         doctype = self.doctypes.get(name)
@@ -306,6 +371,11 @@ def _split(
         elif key not in SYSTEM_COLUMNS:
             errors.append({"field": key, "message": f"isn't a field of {doctype.label}"})
     return payload, errors
+
+
+def _differs(values: Mapping[str, Any], other: Mapping[str, Any]) -> list[str]:
+    """Fieldnames whose value a hook changed, so only those are re-checked."""
+    return [name for name, value in values.items() if other.get(name) != value]
 
 
 def _default(f: DocField, today: date) -> Any:

@@ -37,6 +37,7 @@ import { Properties } from "../builder/Properties";
 import { Banner, NotFound } from "../components/Feedback";
 import { usePageTitle, useSaveShortcut, useUnsavedChangesGuard } from "../hooks";
 import { useDocType, useDocTypes } from "../meta";
+import { useSession } from "../session";
 import { sentence } from "../values";
 
 export function BuilderPage() {
@@ -55,7 +56,12 @@ function DocTypeBuilder({ doctype }: { doctype?: DocType }) {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
+  const { developerMode } = useSession();
   const { data } = useDocTypes();
+  // A DocType an app ships is read-only here: its file is the truth. Developer mode lets
+  // you edit it anyway, and saving writes the file back for you to commit.
+  const fromApp = doctype?.app ?? null;
+  const locked = Boolean(fromApp) && !developerMode;
   const known = useMemo(() => (data?.doctypes ?? []).map((dt) => dt.name), [data]);
 
   const [draft, dispatch] = useReducer(reduce, doctype, toDraft);
@@ -136,7 +142,7 @@ function DocTypeBuilder({ doctype }: { doctype?: DocType }) {
   });
 
   function submit() {
-    if (!dirty || save.isPending) return;
+    if (!dirty || save.isPending || locked) return;
     if (Object.keys(problems).length > 0) {
       setOutcome({ kind: "error", message: "Fix the problems marked in red first." });
       return;
@@ -241,19 +247,35 @@ function DocTypeBuilder({ doctype }: { doctype?: DocType }) {
               Preview
             </button>
           </div>
-          {dirty && !draft.isNew && <span className="badge badge-warning">Not saved</span>}
+          {fromApp && <span className="badge">from {fromApp}</span>}
+          {dirty && !draft.isNew && !locked && <span className="badge badge-warning">Not saved</span>}
           <button
             type="button"
             className="primary"
             onClick={submit}
-            disabled={!dirty || save.isPending}
-            title="Save (Ctrl+S)"
+            disabled={!dirty || save.isPending || locked}
+            title={locked ? `${draft.name} belongs to the app ${fromApp}` : "Save (Ctrl+S)"}
           >
             {save.isPending ? "Saving…" : draft.isNew ? "Create DocType" : "Save"}
           </button>
         </div>
       </div>
 
+      {locked && (
+        <Banner kind="warning">
+          {draft.label || draft.name} comes from the app <code>{fromApp}</code>, so its file is
+          the truth. Edit <code>{`${fromApp}/doctypes/${draft.name}.json`}</code> and run{" "}
+          <code>dhancha migrate</code>, or start the server with{" "}
+          <code>DHANCHA_DEVELOPER_MODE=1</code> to edit it here and write the file. You can
+          still look around and use Preview.
+        </Banner>
+      )}
+      {fromApp && developerMode && (
+        <Banner kind="warning">
+          Developer mode: saving also writes <code>{`${fromApp}/doctypes/${draft.name}.json`}</code>{" "}
+          for you to commit.
+        </Banner>
+      )}
       {outcome && <OutcomeBanner outcome={outcome} />}
 
       {view === "preview" ? (
@@ -328,6 +350,11 @@ function OutcomeBanner({ outcome }: { outcome: Outcome }) {
         <p>
           {outcome.archived_rows} {outcome.archived_rows === 1 ? "value" : "values"} from removed fields
           were copied to the archive first.
+        </p>
+      )}
+      {outcome.written_to && (
+        <p>
+          Written to <code>{outcome.written_to}</code> — commit it to share the change.
         </p>
       )}
     </Banner>

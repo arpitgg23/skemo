@@ -8,7 +8,7 @@ their types, and which ones are required. Dhancha creates and maintains the Post
 for it and serves a REST API for its records. Later milestones add the screens and a
 drag-and-drop builder, all driven by the same metadata.
 
-> **Status: M5 (login and permissions) is done.** You can design a DocType by dragging
+> **Status: M6 (apps and hooks) is done.** You can design a DocType by dragging
 > fields, its Postgres table is created or altered when you save, and every screen and
 > endpoint is behind a sign-in with per-DocType permissions. It hasn't been security
 > reviewed or run anywhere but a laptop, so treat it as a work in progress.
@@ -57,7 +57,7 @@ Activate the venv with `.venv\Scripts\activate` on Windows or `source .venv/bin/
 
 ```bash
 dhancha new-site demo.localhost      # new database + an Administrator; prints their password
-dhancha save-doctype examples/crm    # Customer, Deal, Lead -> tab_customer, tab_deal, tab_lead
+dhancha install-app examples/crm     # Customer, Deal, Lead -> tab_customer, tab_deal, tab_lead
 dhancha schema-log                   # every DDL statement that ran
 dhancha serve                        # API on http://127.0.0.1:8000
 ```
@@ -69,6 +69,69 @@ cd desk
 npm install
 npm run dev                          # Desk on http://localhost:5173
 ```
+
+## Apps: DocTypes in git, and your own Python
+
+A DocType made in the builder lives in that one site's database. An **app** is a folder of
+files instead, so it goes into git and ships to every site:
+
+```
+crm/
+  app.json            {"name": "crm", "title": "CRM", "version": "0.1.0"}
+  doctypes/
+    deal.json         the DocType, the same JSON the builder saves
+    deal.py           optional Python hooks
+```
+
+```bash
+dhancha install-app ./crm    # add it to a site and create its tables
+dhancha migrate              # re-read every installed app and apply the changes
+dhancha list-apps            # what's installed, and which DocTypes came from where
+```
+
+Edit a file, commit it, and `migrate` applies it to every site that has the app — that's how
+a change travels from your laptop to a customer's site. A DocType an app ships is **read-only
+in the builder**, because its file is the truth; the builder says so and offers the file name.
+Start the server with `DHANCHA_DEVELOPER_MODE=1` and the builder will edit it anyway and
+**write the JSON back to the app folder** for you to commit. Deleting a DocType's file and
+running `migrate` leaves its table alone: nothing is dropped behind your back.
+
+`dhancha export-doctype note --to ./crm` moves a DocType you built in the browser into an app.
+
+### Hooks
+
+Next to a DocType's JSON, a module with a class adds the app's own logic:
+
+```python
+# crm/doctypes/deal.py
+from dhancha.hooks import DocumentHooks, ValidationError
+
+class Deal(DocumentHooks):
+    def validate(self, doc):
+        if doc["amount"] is not None and doc["amount"] < 0:
+            doc.error("amount", "can't be negative")      # shown under that input
+        if doc["stage"] == "Won" and doc["amount"] is None:
+            raise ValidationError("A won deal needs an amount.", field="amount")
+
+    def before_save(self, doc):
+        if doc["stage"] == "Won":
+            doc["probability"] = 100                      # computed, on create and update
+```
+
+`validate`, `before_save`, `after_save`, and the per-operation `before_insert`,
+`after_insert`, `before_update`, `after_update`, `before_delete`, `after_delete`. All
+optional.
+
+- `doc` works like a dict of the record's values, plus `doc.name`, `doc.is_new`,
+  `doc.previous` (what's stored, on an update), `doc.user`, `doc.changed("field")`, and
+  `doc.conn` for a query of your own.
+- Values a hook sets are checked against the field's type like anything else, so a hook
+  can't write something the column won't take.
+- Hooks run inside the save's transaction: raising undoes the whole thing, including any
+  SQL the hook itself ran.
+- What a save returns is the record **after** the hooks, so a value a hook computed shows
+  up straight away.
+- Editing a hook file takes effect on the next request — no restart.
 
 ## Signing in, roles and permissions
 
@@ -237,14 +300,16 @@ session everything answers `401`, and `403` means signed in but not allowed.
 - `fields` is comma-separated or `*`; by default you get `name` plus the `in_list_view`
   fields. `order_by` looks like `amount desc`. Listing returns `{"data": [...], "total": n}`.
 
-After upgrading Dhancha, run `dhancha migrate` on existing sites so they get any new system
-tables.
+After upgrading Dhancha, run `dhancha migrate` on existing sites: it adds any new system
+tables and columns, and re-reads the installed apps.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
 | `dhancha new-site NAME` | Create a site database with the system tables and an Administrator |
+| `dhancha install-app PATH` / `list-apps` | Add an app to a site / show what's installed |
+| `dhancha export-doctype NAME --to APP` | Move a DocType built in the browser into an app |
 | `dhancha add-user LOGIN [--role R]` | Add a user |
 | `dhancha set-password LOGIN` / `set-roles LOGIN --role R` | Change a password (signs them out) / replace roles |
 | `dhancha grant DOCTYPE --role R --actions read,write [--if-owner]` | Say what a role may do |
@@ -252,7 +317,7 @@ tables.
 | `dhancha list-sites` / `use NAME` | List sites / set the default |
 | `dhancha save-doctype PATH... [--rename old:new]` | Create or update DocTypes from JSON files or folders |
 | `dhancha delete-doctype NAME --yes` | Delete a DocType; its rows are archived, then the table is dropped |
-| `dhancha migrate` | Re-sync every table from the stored metadata |
+| `dhancha migrate` | Bring a site up to date: system tables, the installed apps, then the tables |
 | `dhancha schema-log` | Show recent schema changes |
 | `dhancha serve` | Run the API: records under `/api/resource`, metadata under `/api/meta` |
 | `dhancha drop-site NAME --yes` | Delete a site and its database |
@@ -278,7 +343,7 @@ The desk's layout and value-conversion logic has unit tests too: `cd desk && npm
 | M3 | Desk: list and form screens drawn from metadata | done |
 | M4 | Drag-and-drop builder: app map, form builder, live preview | done |
 | M5 | Login, roles, permissions per DocType | done |
-| M6 | Developer layer: DocTypes as JSON in git, `migrate`, Python hooks | |
+| M6 | Developer layer: DocTypes as JSON in git, `migrate`, Python hooks | done |
 | M7 | First client app: child tables, naming series, print formats | |
 
 ## License

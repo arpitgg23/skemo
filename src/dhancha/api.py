@@ -17,6 +17,7 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy import inspect, select
 
 from . import __version__
+from .apps import AppError, app_of
 from .auth import AuthError, User, resolve_session, sign_in, sign_out
 from .config import Settings
 from .doctypes import DocTypeError, delete_doctype, save_doctypes
@@ -25,7 +26,7 @@ from .meta import DocType
 from .permissions import ACTIONS, PermissionDenied, Permissions
 from .query import MAX_LIMIT, QueryError
 from .sites import Site, SiteError, default_site_name, get_engine, load_site
-from .store import load_doctypes
+from .store import app_owners, load_doctypes
 from .sync import SchemaSyncError
 from .system_tables import sys_schema_log
 
@@ -40,6 +41,7 @@ ERROR_STATUS: dict[type[Exception], int] = {
     SchemaSyncError: 409,  # the live data doesn't allow the change; nothing was applied
     PermissionDenied: 403,
     AuthError: 401,
+    AppError: 409,  # an app's folder has moved or has a file that isn't a valid DocType
 }
 
 
@@ -121,7 +123,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             path="/",
         )
         # The same shape as /api/auth/me, so the desk can use it as the session straight away.
-        return {"site": site.name, "user": _describe(user, permissions)}
+        return _session(site, user, permissions, settings)
 
     @app.post("/api/auth/logout", status_code=204)
     def logout(site: CurrentSite, request: Request) -> Response:
@@ -137,7 +139,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         """Who's signed in and what they may do, so the desk shows only what they can use."""
         with get_engine(site, settings).connect() as conn:
             permissions = Permissions.for_user(conn, user)
-        return {"site": site.name, "user": _describe(user, permissions)}
+        return _session(site, user, permissions, settings)
 
     # Record routes return plain dicts (response_model=None) so FastAPI's encoder turns
     # Decimal amounts into JSON numbers rather than strings.
@@ -205,6 +207,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 for name, dt in load_doctypes(conn).items()
                 if permissions.can(name, "read")
             }
+            owners = app_owners(conn)
             inspector = inspect(conn)
             live = {
                 dt.name: (
@@ -224,6 +227,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "table": dt.table_name,
                     "autoname": dt.autoname,
                     "description": dt.description,
+                    "app": owners.get(dt.name),  # None when the builder made it
                     "can": sorted(a for a in ACTIONS if permissions.can(dt.name, a)),
                     "fields": [f.model_dump(exclude_defaults=True) for f in dt.fields],
                     "columns": [
@@ -278,15 +282,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if doctype.name != name:
             raise HTTPException(422, f"the URL says {name!r} but the DocType is {doctype.name!r}")
         engine = get_engine(site, settings)
-        if body.create:
-            with engine.connect() as conn:
-                if name in load_doctypes(conn):
-                    raise HTTPException(409, f"a DocType named {name!r} already exists")
-        result = save_doctypes(engine, [doctype], renames={name: body.renames})
+        with engine.connect() as conn:
+            if body.create and name in load_doctypes(conn):
+                raise HTTPException(409, f"a DocType named {name!r} already exists")
+            owner = app_owners(conn).get(name)
+            app = app_of(conn, name) if owner and settings.developer_mode else None
+        if owner and not settings.developer_mode:
+            raise HTTPException(
+                409,
+                f"{name!r} belongs to the app {owner!r}, so its file is the truth. Edit "
+                f"{owner}/doctypes/{name}.json and run `dhancha migrate`, or start the "
+                "server with DHANCHA_DEVELOPER_MODE=1 to edit it here and write the file.",
+            )
+        result = save_doctypes(engine, [doctype], renames={name: body.renames}, app=owner)
+        written = str(app.write_doctype(doctype)) if app else None
         return {
             "doctype": doctype.model_dump(mode="json", exclude_defaults=True),
             "statements": result.statements,
             "archived_rows": result.archived_rows,
+            "written_to": written,
         }
 
     @app.delete("/api/meta/doctype/{name}", response_model=None)
@@ -297,6 +311,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with engine.connect() as conn:
             if name not in load_doctypes(conn):
                 raise HTTPException(404, f"no DocType named {name!r}")
+            owner = app_owners(conn).get(name)
+        if owner:
+            raise HTTPException(
+                409,
+                f"{name!r} belongs to the app {owner!r}. Delete "
+                f"{owner}/doctypes/{name}.json and run `dhancha migrate` instead.",
+            )
         try:
             result = delete_doctype(engine, name)
         except DocTypeError as e:  # other DocTypes link to it
@@ -306,13 +327,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
-def _describe(user: User, permissions: Permissions) -> dict[str, Any]:
+def _session(
+    site: Site, user: User, permissions: Permissions, settings: Settings
+) -> dict[str, Any]:
     return {
-        "name": user.name,
-        "full_name": user.full_name,
-        "label": user.label,
-        "roles": sorted(user.roles),
-        "is_admin": permissions.admin,
+        "site": site.name,
+        # Developer mode lets the builder edit an app's DocTypes and write their files.
+        "developer_mode": settings.developer_mode,
+        "user": {
+            "name": user.name,
+            "full_name": user.full_name,
+            "label": user.label,
+            "roles": sorted(user.roles),
+            "is_admin": permissions.admin,
+        },
     }
 
 

@@ -15,6 +15,7 @@ export function useSession() {
     // while the tab was open) has to win over it.
     user: signedOut ? undefined : data?.user,
     site: signedOut ? undefined : data?.site,
+    developerMode: Boolean(!signedOut && data?.developer_mode),
     isLoading,
     signedOut,
     // A real problem, like the API being down — not just "please sign in".

@@ -1,5 +1,9 @@
 """The HTTP API: health and read-only metadata."""
 
+import json
+from dataclasses import replace
+from pathlib import Path
+
 import pytest
 from factories import doctype, field
 from fastapi.testclient import TestClient
@@ -7,7 +11,7 @@ from sqlalchemy import insert
 
 from dhancha.api import SESSION_COOKIE, SITE_HEADER, create_app
 from dhancha.auth import ADMIN, create_user
-from dhancha.doctypes import save_doctype, save_doctypes
+from dhancha.doctypes import install_app, save_doctype, save_doctypes
 from dhancha.permissions import grant, install_roles
 from dhancha.sites import drop_site, get_engine, new_site, set_default_site
 from dhancha.system_tables import sys_role
@@ -292,6 +296,57 @@ def test_builder_deletes_doctypes(crm_client):
     assert linked.status_code == 409  # the invoice DocType links to it
     deleted = crm_client.delete("/api/meta/doctype/invoice")
     assert deleted.json()["statements"] == ["DROP TABLE tab_invoice"]
+
+
+@pytest.fixture
+def app_site(client, settings, site, tmp_path):
+    """A site with a small app installed, and the admin client for it."""
+    folder = tmp_path / "field"
+    (folder / "doctypes").mkdir(parents=True)
+    (folder / "app.json").write_text('{"name": "field", "title": "Field", "version": "1.0.0"}')
+    definition = {
+        "name": "visit",
+        "fields": [{"fieldname": "customer_name", "fieldtype": "Data", "label": "Customer"}],
+    }
+    (folder / "doctypes" / "visit.json").write_text(json.dumps(definition))
+    install_app(get_engine(site, settings), folder)
+    return folder, definition
+
+
+def test_an_apps_doctype_is_read_only_in_the_builder(client, app_site):
+    folder, definition = app_site
+    listed = client.get("/api/meta/doctypes").json()["doctypes"]
+    [visit] = [dt for dt in listed if dt["name"] == "visit"]
+    assert visit["app"] == "field"
+
+    definition["fields"][0]["label"] = "Client"
+    refused = client.put("/api/meta/doctype/visit", json={"doctype": definition})
+    assert refused.status_code == 409
+    assert "belongs to the app 'field'" in refused.json()["detail"]
+    assert client.delete("/api/meta/doctype/visit").status_code == 409
+    # The file is untouched, so `dhancha migrate` would not undo anything.
+    assert "Customer" in (folder / "doctypes" / "visit.json").read_text()
+
+
+def test_developer_mode_saves_and_writes_the_file_back(settings, site, app_site):
+    folder, definition = app_site
+    developer = TestClient(create_app(replace(settings, developer_mode=True)))
+    developer.headers[SITE_HEADER] = site.name
+    developer.post("/api/auth/login", json={"user": ADMIN, "password": ADMIN_PASSWORD})
+    assert developer.get("/api/auth/me").json()["developer_mode"] is True
+
+    definition["fields"].append({"fieldname": "notes", "fieldtype": "Text"})
+    saved = developer.put("/api/meta/doctype/visit", json={"doctype": definition})
+
+    assert saved.status_code == 200
+    assert saved.json()["statements"] == ["ALTER TABLE tab_visit ADD COLUMN notes TEXT"]
+    written = Path(saved.json()["written_to"])
+    assert written == folder / "doctypes" / "visit.json"
+    # The file now has the new field, ready to commit.
+    assert [f["fieldname"] for f in json.loads(written.read_text())["fields"]] == [
+        "customer_name",
+        "notes",
+    ]
 
 
 def test_http_errors(crm_client):
