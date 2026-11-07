@@ -18,14 +18,16 @@ from sqlalchemy import update as update_stmt
 from sqlalchemy.engine import Connection, RowMapping
 from sqlalchemy.exc import IntegrityError
 
+from .auth import ADMIN, User
 from .fieldtypes import timestamp_adapter, value_adapter
 from .meta import DocField, DocType
 from .naming import MAX_NAME, make_name
+from .permissions import Action, Permissions
 from .query import MAX_LIMIT, ListQuery, QueryError, public_columns
 from .store import load_doctypes
 from .sync import build_table
 
-DEFAULT_USER = "Administrator"  # until logins arrive in M5
+DEFAULT_USER = ADMIN
 # Set by the system. Clients may echo them back from a read, so they're ignored on write,
 # except modified_at on update, which is compared to catch concurrent edits.
 SYSTEM_COLUMNS = ("owner", "created_at", "modified_at", "modified_by")
@@ -55,25 +57,46 @@ class DocumentValidationError(ValueError):
 
 
 class Records:
-    """Record operations on one site. `doctypes` must be the site's complete set."""
+    """Record operations on one site, as one user.
+
+    `doctypes` must be the site's complete set. Every method checks `permissions` first,
+    so a caller can't reach a DocType the user has no rule for.
+    """
 
     def __init__(
-        self, conn: Connection, doctypes: Mapping[str, DocType], *, user: str = DEFAULT_USER
+        self,
+        conn: Connection,
+        doctypes: Mapping[str, DocType],
+        *,
+        user: str = DEFAULT_USER,
+        permissions: Permissions | None = None,
     ) -> None:
         self.conn = conn
         self.doctypes = doctypes
         self.user = user
+        # No permissions given means the caller is trusted (the CLI, or a test).
+        self.permissions = permissions or Permissions(
+            user=user, roles=frozenset(), rules={}, admin=True
+        )
         self._tables: dict[str, Table] = {}
 
     @classmethod
-    def load(cls, conn: Connection, *, user: str = DEFAULT_USER) -> Records:
-        return cls(conn, load_doctypes(conn), user=user)
+    def load(
+        cls, conn: Connection, *, user: str | User = DEFAULT_USER, check_permissions: bool = False
+    ) -> Records:
+        name = user.name if isinstance(user, User) else user
+        permissions = None
+        if check_permissions:
+            if not isinstance(user, User):
+                raise ValueError("checking permissions needs the User, not just their name")
+            permissions = Permissions.for_user(conn, user)
+        return cls(conn, load_doctypes(conn), user=name, permissions=permissions)
 
     def insert(
         self, doctype: str, data: Mapping[str, Any], *, today: date | None = None
     ) -> dict[str, Any]:
         """Create a record and return it as stored."""
-        dt = self._doctype(doctype)
+        dt = self._doctype(doctype, "create")
         today = today or date.today()
         payload, errors = _split(dt, data)
         given_name = payload.pop("name", None)
@@ -93,7 +116,7 @@ class Records:
         return self._write(dt, insert(self._table(dt)).values(row), row)
 
     def get(self, doctype: str, name: str) -> dict[str, Any]:
-        return _public(self._fetch(self._doctype(doctype), name))
+        return _public(self._fetch(self._doctype(doctype, "read"), name))
 
     def update(self, doctype: str, name: str, data: Mapping[str, Any]) -> dict[str, Any]:
         """Change some fields of a record and return it as stored.
@@ -102,7 +125,7 @@ class Records:
         record has changed since, so nobody silently overwrites someone else's edit. A save
         that changes nothing writes nothing.
         """
-        dt = self._doctype(doctype)
+        dt = self._doctype(doctype, "write")
         current = self._fetch(dt, name, lock=True)
         payload, errors = _split(dt, data, keep=("modified_at",))
         if payload.pop("name", name) != name:
@@ -138,7 +161,7 @@ class Records:
 
     def delete(self, doctype: str, name: str) -> None:
         """Delete a record after archiving it. Refused while other records link to it."""
-        dt = self._doctype(doctype)
+        dt = self._doctype(doctype, "delete")
         current = self._fetch(dt, name, lock=True)
         self._check_not_linked(dt, name, current["id"])
         table = self._table(dt)
@@ -170,7 +193,7 @@ class Records:
         offset: int = 0,
     ) -> dict[str, Any]:
         """A page of records, plus how many match in total. See query.py for the syntax."""
-        dt = self._doctype(doctype)
+        dt = self._doctype(doctype, "read")
         if not 1 <= limit <= MAX_LIMIT:
             raise QueryError(f"limit must be between 1 and {MAX_LIMIT}")
         if offset < 0:
@@ -178,6 +201,8 @@ class Records:
         table = self._table(dt)
         query = ListQuery(dt, table)
         conditions = query.conditions(filters) + query.any_of(or_filters)
+        if self.permissions.owner_only(doctype, "read"):
+            conditions.append(table.c.owner == self.user)
         page = self.conn.execute(
             select(*query.columns(fields))
             .where(*conditions)
@@ -191,10 +216,12 @@ class Records:
         ).scalar_one()
         return {"data": data, "total": total}
 
-    def _doctype(self, name: str) -> DocType:
+    def _doctype(self, name: str, action: Action | None = None) -> DocType:
         doctype = self.doctypes.get(name)
         if doctype is None:
             raise DocumentNotFound(f"no DocType named {name!r}")
+        if action is not None:
+            self.permissions.require(name, action, doctype.label)
         return doctype
 
     def _table(self, doctype: DocType) -> Table:
@@ -210,6 +237,11 @@ class Records:
             query = query.with_for_update()
         row = self.conn.execute(query).mappings().first()
         if row is None:
+            raise DocumentNotFound(f"{doctype.label} {name!r} not found")
+        # Someone limited to their own records is told it isn't there, not that it is
+        # someone else's: the answer is the same whether or not the record exists.
+        rule = self.permissions.rule(doctype.name)
+        if rule is not None and rule.if_owner and row["owner"] != self.user:
             raise DocumentNotFound(f"{doctype.label} {name!r} not found")
         return row
 

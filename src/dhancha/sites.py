@@ -16,7 +16,9 @@ from dataclasses import dataclass
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection, Engine, make_url
 
+from .auth import ADMIN, create_user
 from .config import Settings
+from .permissions import SYSTEM_MANAGER, install_roles
 from .system_tables import install_system_tables
 
 SITE_NAME = re.compile(r"^[a-z0-9](?:[a-z0-9.-]{0,48}[a-z0-9])?$")
@@ -50,8 +52,12 @@ def get_engine(site: Site, settings: Settings) -> Engine:
         return _engines[key]
 
 
-def new_site(name: str, settings: Settings) -> Site:
-    """Create the site's database, install the system tables and write its config."""
+def new_site(name: str, settings: Settings, *, admin_password: str | None = None) -> Site:
+    """Create the site's database, install the system tables and write its config.
+
+    The site gets the built-in roles and an Administrator, who is a System Manager. Without
+    a password the Administrator can't sign in until one is set.
+    """
     if not SITE_NAME.match(name):
         raise SiteError(f"site name {name!r} must look like a hostname, e.g. acme.localhost")
     folder = settings.sites_dir / name
@@ -66,7 +72,17 @@ def new_site(name: str, settings: Settings) -> Site:
             raise SiteError(f"database {site.db_name!r} already exists on the server")
         conn.execute(text(f"CREATE DATABASE {_quote(conn, site.db_name)}"))
     try:
-        install_system_tables(get_engine(site, settings))
+        engine = get_engine(site, settings)
+        install_system_tables(engine)
+        with engine.begin() as conn:
+            install_roles(conn)
+            create_user(
+                conn,
+                ADMIN,
+                password=admin_password,
+                full_name="Administrator",
+                roles=[SYSTEM_MANAGER],
+            )
     except Exception:
         _drop_database(site, settings)
         raise

@@ -5,7 +5,7 @@ import { createBrowserRouter } from "react-router";
 import { RouterProvider } from "react-router/dom";
 import { ApiError } from "./api";
 import "./app.css";
-import { NotFound, RouteError } from "./components/Feedback";
+import { AdminOnly, NotFound, RouteError } from "./components/Feedback";
 import { Shell } from "./components/Shell";
 import { FormView } from "./pages/FormView";
 import { Home } from "./pages/Home";
@@ -27,8 +27,10 @@ const queryClient = new QueryClient({
 const AppMap = lazy(() => import("./pages/AppMap").then((m) => ({ default: m.AppMap })));
 const BuilderPage = lazy(() => import("./pages/Builder").then((m) => ({ default: m.BuilderPage })));
 
-const whenLoaded = (page: ReactNode) => (
-  <Suspense fallback={<p className="muted">Loading…</p>}>{page}</Suspense>
+const builderRoute = (page: ReactNode) => (
+  <AdminOnly>
+    <Suspense fallback={<p className="muted">Loading…</p>}>{page}</Suspense>
+  </AdminOnly>
 );
 
 const router = createBrowserRouter([
@@ -42,9 +44,9 @@ const router = createBrowserRouter([
       { path: "app/:doctype/new", element: <FormView /> },
       // The rest of the path is the record's name, which may contain slashes.
       { path: "app/:doctype/*", element: <FormView /> },
-      { path: "build", element: whenLoaded(<AppMap />) },
-      { path: "build/new", element: whenLoaded(<BuilderPage />) },
-      { path: "build/:doctype", element: whenLoaded(<BuilderPage />) },
+      { path: "build", element: builderRoute(<AppMap />) },
+      { path: "build/new", element: builderRoute(<BuilderPage />) },
+      { path: "build/:doctype", element: builderRoute(<BuilderPage />) },
       { path: "*", element: <NotFound what="This page" /> },
     ],
   },

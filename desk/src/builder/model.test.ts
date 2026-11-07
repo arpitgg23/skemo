@@ -18,6 +18,7 @@ const deal: DocType = {
   module: "CRM",
   table: "tab_deal",
   autoname: "format:DEAL-{####}",
+  can: ["read", "write", "create", "delete"],
   columns: [],
   fields: [
     { fieldname: "title", fieldtype: "Data", label: "Title", reqd: true },

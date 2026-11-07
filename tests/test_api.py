@@ -3,22 +3,39 @@
 import pytest
 from factories import doctype, field
 from fastapi.testclient import TestClient
+from sqlalchemy import insert
 
-from dhancha.api import SITE_HEADER, create_app
+from dhancha.api import SESSION_COOKIE, SITE_HEADER, create_app
+from dhancha.auth import ADMIN, create_user
 from dhancha.doctypes import save_doctype, save_doctypes
+from dhancha.permissions import grant, install_roles
 from dhancha.sites import drop_site, get_engine, new_site, set_default_site
+from dhancha.system_tables import sys_role
+
+ADMIN_PASSWORD = "an admin password"
 
 
 @pytest.fixture
 def site(settings, site_name):
-    site = new_site(site_name, settings)
+    site = new_site(site_name, settings, admin_password=ADMIN_PASSWORD)
     yield site
     drop_site(site_name, settings)
 
 
 @pytest.fixture
-def client(settings):
+def anonymous(settings):
+    """A client that hasn't signed in."""
     return TestClient(create_app(settings))
+
+
+@pytest.fixture
+def client(settings, site):
+    """Its own client, signed in as the Administrator, with the site header set."""
+    client = TestClient(create_app(settings))
+    client.headers[SITE_HEADER] = site.name
+    response = client.post("/api/auth/login", json={"user": ADMIN, "password": ADMIN_PASSWORD})
+    assert response.status_code == 200, response.text
+    return client
 
 
 def test_health(client):
@@ -44,11 +61,98 @@ def test_doctypes_show_metadata_and_live_columns(client, settings, site):
 def test_schema_log_uses_the_default_site_without_a_header(client, settings, site):
     save_doctype(get_engine(site, settings), doctype("lead", field("lead_name")))
     set_default_site(site.name, settings)
+    del client.headers[SITE_HEADER]  # fall back to the default site
 
     entries = client.get("/api/meta/schema-log").json()["entries"]
 
     assert entries[0]["table"] == "tab_lead"
     assert entries[0]["statement"].startswith("CREATE TABLE tab_lead")
+
+
+def test_everything_but_health_needs_signing_in(anonymous, site):
+    anonymous.headers[SITE_HEADER] = site.name
+    assert anonymous.get("/api/health").status_code == 200
+    for method, url in [
+        ("get", "/api/meta/doctypes"),
+        ("get", "/api/auth/me"),
+        ("get", "/api/resource/lead"),
+        ("get", "/api/meta/schema-log"),
+        ("post", "/api/resource/lead"),
+        ("put", "/api/meta/doctype/lead"),
+        ("delete", "/api/meta/doctype/lead"),
+    ]:
+        body = {"json": {}} if method in ("post", "put") else {}
+        response = getattr(anonymous, method)(url, **body)
+        assert response.status_code == 401, f"{method} {url} was {response.status_code}"
+
+
+def test_sign_in_and_out(anonymous, site):
+    anonymous.headers[SITE_HEADER] = site.name
+    wrong = anonymous.post("/api/auth/login", json={"user": ADMIN, "password": "guessing"})
+    assert (wrong.status_code, wrong.json()["detail"]) == (401, "Wrong login or password.")
+
+    ok = anonymous.post(
+        "/api/auth/login", json={"user": "administrator", "password": ADMIN_PASSWORD}
+    )
+    assert ok.status_code == 200
+    assert ok.json()["user"] == {
+        "name": ADMIN,
+        "full_name": ADMIN,
+        "label": ADMIN,
+        "roles": ["System Manager"],
+        "is_admin": True,
+    }
+    cookie = ok.cookies[SESSION_COOKIE]
+    assert "httponly" in ok.headers["set-cookie"].lower()  # JavaScript can't read it
+    assert anonymous.get("/api/auth/me").json()["user"]["name"] == ADMIN
+
+    signed_out = anonymous.post("/api/auth/logout")
+    assert signed_out.status_code == 204
+    # The browser is told to drop the cookie, and the session is gone server-side too.
+    assert SESSION_COOKIE in signed_out.headers.get("set-cookie", "")
+    assert SESSION_COOKIE not in anonymous.cookies
+    assert anonymous.get("/api/auth/me").status_code == 401
+    # The old token is dead even if someone kept a copy of it.
+    anonymous.cookies.set(SESSION_COOKIE, cookie)
+    assert anonymous.get("/api/auth/me").status_code == 401
+
+
+def test_a_user_sees_only_what_their_roles_allow(client, anonymous, settings, site):
+    save_doctypes(
+        get_engine(site, settings),
+        [doctype("lead", field("lead_name"), module="CRM"), doctype("payslip", field("net_pay"))],
+    )
+    with get_engine(site, settings).begin() as conn:
+        install_roles(conn)
+        conn.execute(insert(sys_role).values(name="Sales"))
+        create_user(conn, "asha@acme.in", password="a good password", roles=["Sales"])
+        grant(conn, "lead", "Sales", ["read", "create"])
+
+    anonymous.headers[SITE_HEADER] = site.name
+    anonymous.post("/api/auth/login", json={"user": "asha@acme.in", "password": "a good password"})
+
+    me = anonymous.get("/api/auth/me").json()["user"]
+    assert (me["roles"], me["is_admin"]) == (["Sales"], False)
+
+    listed = anonymous.get("/api/meta/doctypes").json()["doctypes"]
+    assert [dt["name"] for dt in listed] == ["lead"]  # payslip isn't even mentioned
+    assert listed[0]["can"] == ["create", "read"]
+
+    assert anonymous.get("/api/resource/lead").status_code == 200
+    assert anonymous.get("/api/resource/payslip").status_code == 403
+    deleting = anonymous.delete("/api/resource/lead/whatever")
+    assert (deleting.status_code, deleting.json()["detail"]) == (403, "You can't delete Lead.")
+
+    # The builder is for System Managers only.
+    for response in (
+        anonymous.put("/api/meta/doctype/lead", json={"doctype": {"name": "lead", "fields": []}}),
+        anonymous.delete("/api/meta/doctype/lead"),
+        anonymous.get("/api/meta/schema-log"),
+    ):
+        assert response.status_code == 403
+        assert "System Manager" in response.json()["detail"]
+    # …and the Administrator's own save still works, so nothing was broken for them.
+    assert client.get("/api/meta/schema-log").status_code == 200
 
 
 @pytest.mark.parametrize("name", ["nope.localhost", "../../etc"])

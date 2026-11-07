@@ -33,6 +33,19 @@ export type DataField = Field & { fieldname: string };
 
 export type Column = { name: string; type: string; nullable: boolean };
 
+export type Action = "read" | "write" | "create" | "delete";
+
+export type CurrentUser = {
+  name: string;
+  full_name: string;
+  label: string;
+  roles: string[];
+  is_admin: boolean;
+};
+
+/** Who's signed in, on which site. Signing in and /api/auth/me both return this. */
+export type Session = { site: string; user: CurrentUser };
+
 export type DocType = {
   name: string;
   label: string;
@@ -40,6 +53,7 @@ export type DocType = {
   table: string;
   autoname: string;
   description?: string | null;
+  can: Action[]; // what the signed-in user may do with it
   fields: Field[];
   columns: Column[]; // what the table really has in Postgres
 };
@@ -146,6 +160,10 @@ function listQuery(params: ListParams): string {
 
 export const api = {
   health: () => request<{ status: string; version: string }>("GET", "/api/health"),
+  login: (user: string, password: string) =>
+    request<Session>("POST", "/api/auth/login", { user, password }),
+  logout: () => request<void>("POST", "/api/auth/logout"),
+  me: () => request<Session>("GET", "/api/auth/me"),
   doctypes: () => request<{ site: string; doctypes: DocType[] }>("GET", "/api/meta/doctypes"),
   schemaLog: (limit = 20) =>
     request<{ site: string; entries: LogEntry[] }>("GET", `/api/meta/schema-log?limit=${limit}`),

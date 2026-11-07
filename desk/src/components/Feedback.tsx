@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { isRouteErrorResponse, Link, useRouteError } from "react-router";
+import { useSession } from "../session";
 
 export function Banner({
   kind = "error",
@@ -12,6 +13,20 @@ export function Banner({
     <div className={`banner banner-${kind}`} role={kind === "error" ? "alert" : "status"}>
       {children}
     </div>
+  );
+}
+
+/** Screens only a System Manager should see, such as the builder. The server checks too:
+ * this is so nobody is shown a page whose every action would be refused. */
+export function AdminOnly({ children }: { children: ReactNode }) {
+  const { user } = useSession();
+  if (user?.is_admin) return <>{children}</>;
+  return (
+    <section className="panel">
+      <h1>Not allowed</h1>
+      <p>Only a System Manager can design DocTypes.</p>
+      <Link to="/">Back to the start</Link>
+    </section>
   );
 }
 

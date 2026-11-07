@@ -11,6 +11,7 @@ from collections.abc import Iterable, Mapping
 from sqlalchemy.engine import Engine
 
 from .meta import DocType
+from .permissions import install_roles
 from .store import delete_definition, load_doctypes, save_definition
 from .sync import Renames, SyncResult, sync_schema
 from .system_tables import install_system_tables
@@ -86,6 +87,7 @@ def sync_site(engine: Engine, *, actor: str = DEFAULT_ACTOR) -> tuple[list[str],
     """
     with engine.begin() as conn:
         installed = install_system_tables(conn)
+        install_roles(conn)  # a site made before roles existed gets them here
         return installed, sync_schema(conn, load_doctypes(conn).values(), actor=actor)
 
 

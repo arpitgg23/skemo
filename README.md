@@ -8,9 +8,10 @@ their types, and which ones are required. Dhancha creates and maintains the Post
 for it and serves a REST API for its records. Later milestones add the screens and a
 drag-and-drop builder, all driven by the same metadata.
 
-> **Status: M4 (the builder) is done.** You can design a DocType by dragging fields, and
-> its Postgres table is created or altered when you save. There's no login yet, so don't
-> expose the server to the internet.
+> **Status: M5 (login and permissions) is done.** You can design a DocType by dragging
+> fields, its Postgres table is created or altered when you save, and every screen and
+> endpoint is behind a sign-in with per-DocType permissions. It hasn't been security
+> reviewed or run anywhere but a laptop, so treat it as a work in progress.
 
 ## How it works
 
@@ -55,7 +56,7 @@ uv venv && uv pip install -e ".[dev]"
 Activate the venv with `.venv\Scripts\activate` on Windows or `source .venv/bin/activate` elsewhere.
 
 ```bash
-dhancha new-site demo.localhost      # new database site_demo_localhost, set as the default
+dhancha new-site demo.localhost      # new database + an Administrator; prints their password
 dhancha save-doctype examples/crm    # Customer, Deal, Lead -> tab_customer, tab_deal, tab_lead
 dhancha schema-log                   # every DDL statement that ran
 dhancha serve                        # API on http://127.0.0.1:8000
@@ -68,6 +69,37 @@ cd desk
 npm install
 npm run dev                          # Desk on http://localhost:5173
 ```
+
+## Signing in, roles and permissions
+
+Everything except `/api/health` needs a session. Creating a site creates an **Administrator**
+who is a **System Manager** — the role that may use the builder and reach every record.
+
+```bash
+dhancha add-user asha@acme.in --password "..." --full-name "Asha Patel" --role Sales
+dhancha grant lead --role Sales --actions read,create,write --if-owner
+dhancha permissions                  # who can do what on this site
+```
+
+- **A role is made by granting it something**: `grant` creates the role if it's new.
+- **No rule means no access.** A DocType nobody has been granted is invisible to everyone
+  but a System Manager, including in the sidebar and in `/api/meta/doctypes`.
+- **`--if-owner`** limits a role to the records it created, so a sales rep sees only their
+  own leads. Someone else's record reads as "not found", never as "forbidden", so the answer
+  is the same whether or not it exists. Counts and filters obey the same limit.
+- Several roles combine to the most generous: a second role without `--if-owner` lifts the
+  limit.
+- `dhancha set-roles <user> --role A --role B` replaces someone's roles;
+  `dhancha set-password <user>` signs them out everywhere.
+
+Passwords are hashed with scrypt from the standard library. Signing in sets an HttpOnly
+cookie holding a random token; only the token's SHA-256 hash is stored, so a copy of the
+database can't be used to sign in as anyone. Sessions last 14 days of inactivity. Set
+`DHANCHA_COOKIE_SECURE=1` anywhere the site is served over HTTPS.
+
+Not covered yet: no password reset or sign-up, no rate limiting on sign-in attempts, no
+field-level permissions, and link autocomplete can confirm that a record of a linked
+DocType exists even without read access to it.
 
 ## Builder
 
@@ -175,12 +207,21 @@ The metadata has its own endpoints, which is what the builder uses:
 
 | Method | URL | What it does |
 |---|---|---|
-| GET | `/api/meta/doctypes` | Every DocType, with the columns its table really has |
-| PUT | `/api/meta/doctype/{name}` | Create or update a DocType and sync its table; returns the DDL that ran. Body: `{"doctype": {…}, "renames": {"phone": "mobile"}, "create": false}` |
-| DELETE | `/api/meta/doctype/{name}` | Delete a DocType and drop its table |
-| GET | `/api/meta/schema-log` | Recent schema changes |
+| GET | `/api/meta/doctypes` | The DocTypes you may read, with the columns their tables really have and what you may do with each |
+| PUT | `/api/meta/doctype/{name}` | Create or update a DocType and sync its table; returns the DDL that ran. Body: `{"doctype": {…}, "renames": {"phone": "mobile"}, "create": false}`. System Managers only |
+| DELETE | `/api/meta/doctype/{name}` | Delete a DocType and drop its table. System Managers only |
+| GET | `/api/meta/schema-log` | Recent schema changes. System Managers only |
 
-Open **http://127.0.0.1:8000/docs** to try them in the browser.
+And for signing in:
+
+| Method | URL | What it does |
+|---|---|---|
+| POST | `/api/auth/login` | `{"user": "...", "password": "..."}`; sets the session cookie |
+| POST | `/api/auth/logout` | Ends the session and clears the cookie |
+| GET | `/api/auth/me` | Who's signed in, their roles, and whether they're a System Manager |
+
+Open **http://127.0.0.1:8000/docs** to try them in the browser. Sign in first: without a
+session everything answers `401`, and `403` means signed in but not allowed.
 
 - **Validation comes from the fields**: types, required fields, lengths, Select choices, and
   links that must point at real records. Every problem is reported at once:
@@ -203,7 +244,11 @@ tables.
 
 | Command | What it does |
 |---|---|
-| `dhancha new-site NAME` | Create a site database with the system tables |
+| `dhancha new-site NAME` | Create a site database with the system tables and an Administrator |
+| `dhancha add-user LOGIN [--role R]` | Add a user |
+| `dhancha set-password LOGIN` / `set-roles LOGIN --role R` | Change a password (signs them out) / replace roles |
+| `dhancha grant DOCTYPE --role R --actions read,write [--if-owner]` | Say what a role may do |
+| `dhancha revoke DOCTYPE ROLE` / `permissions` | Take access away / show who can do what |
 | `dhancha list-sites` / `use NAME` | List sites / set the default |
 | `dhancha save-doctype PATH... [--rename old:new]` | Create or update DocTypes from JSON files or folders |
 | `dhancha delete-doctype NAME --yes` | Delete a DocType; its rows are archived, then the table is dropped |
@@ -232,7 +277,7 @@ The desk's layout and value-conversion logic has unit tests too: `cd desk && npm
 | M2 | Records REST API: validation from fields, naming series, link and edit-clash checks | done |
 | M3 | Desk: list and form screens drawn from metadata | done |
 | M4 | Drag-and-drop builder: app map, form builder, live preview | done |
-| M5 | Login, roles, permissions per DocType | |
+| M5 | Login, roles, permissions per DocType | done |
 | M6 | Developer layer: DocTypes as JSON in git, `migrate`, Python hooks | |
 | M7 | First client app: child tables, naming series, print formats | |
 

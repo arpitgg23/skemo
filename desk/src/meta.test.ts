@@ -16,6 +16,7 @@ const doctype = (fields: Field[]): DocType => ({
   module: "CRM",
   table: "tab_deal",
   autoname: "hash",
+  can: ["read", "write", "create", "delete"],
   fields,
   columns: [],
 });

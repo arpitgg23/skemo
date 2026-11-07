@@ -634,6 +634,44 @@ button.danger {
   word-break: break-word;
 }
 
+/* Sign in */
+
+.loading {
+  padding: 24px;
+}
+
+.login {
+  max-width: 380px;
+  margin: 10vh auto;
+  padding: 0 16px;
+}
+
+.login .panel {
+  margin: 0;
+}
+
+.login h1 {
+  margin: 0 0 16px;
+  font-size: 20px;
+}
+
+.login button {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.site-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .site-name {
+    display: none;
+  }
+}
+
 /* Builder */
 
 .top-link {

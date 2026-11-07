@@ -2,6 +2,7 @@
 
 # No `from __future__ import annotations`: Typer reads these annotations at runtime.
 import os
+import secrets
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -9,13 +10,15 @@ from typing import Annotated, NoReturn
 
 import typer
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import insert, select
 from sqlalchemy.engine import Engine
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
+from .auth import AuthError, create_user, find_user, roles_of, set_password, set_roles
 from .config import Settings
 from .doctypes import DocTypeError, delete_doctype, save_doctypes, sync_site
 from .meta import DocType
+from .permissions import ACTIONS, grant, install_roles, revoke
 from .sites import (
     SiteError,
     default_site_name,
@@ -27,7 +30,7 @@ from .sites import (
     set_default_site,
 )
 from .sync import SchemaSyncError, SyncResult
-from .system_tables import sys_schema_log
+from .system_tables import sys_permission, sys_role, sys_schema_log, sys_user
 
 app = typer.Typer(help="Dhancha: build ERPs and CRMs from metadata.", no_args_is_help=True)
 
@@ -55,17 +58,134 @@ def main(
 @app.command("new-site")
 def new_site_command(
     name: Annotated[str, typer.Argument(help="Site name, e.g. acme.localhost")],
+    admin_password: Annotated[
+        str | None,
+        typer.Option(help="Administrator's password. Left out, one is generated and shown once."),
+    ] = None,
     make_default: Annotated[
         bool, typer.Option("--default/--no-default", help="Make it the default site.")
     ] = True,
 ) -> None:
-    """Create a site: a new Postgres database with the system tables."""
+    """Create a site: a new Postgres database with the system tables and an Administrator."""
     settings = Settings.from_env()
+    generated = admin_password is None
+    password = admin_password or secrets.token_urlsafe(12)
     with _errors():
-        site = new_site(name, settings)
+        site = new_site(name, settings, admin_password=password)
         if make_default:
             set_default_site(name, settings)
     typer.echo(f"Created site {site.name} (database {site.db_name})")
+    if generated:
+        typer.secho(
+            f"Administrator password: {password}\nWrite it down: it isn't shown again.",
+            fg=typer.colors.YELLOW,
+        )
+
+
+@app.command("add-user")
+def add_user_command(
+    name: Annotated[str, typer.Argument(help="Login, usually an email")],
+    password: Annotated[str | None, typer.Option(help="Leave out to set one later.")] = None,
+    full_name: Annotated[str, typer.Option(help="Shown in the desk.")] = "",
+    role: Annotated[
+        list[str] | None, typer.Option("--role", help="Role to give them. Repeatable.")
+    ] = None,
+    site: SiteOption = None,
+) -> None:
+    """Add a user to a site."""
+    with _errors(), _engine(site).begin() as conn:
+        install_roles(conn)
+        create_user(conn, name, password=password, full_name=full_name, roles=role or [])
+    typer.echo(f"Added {name}" + (f" with roles: {', '.join(role)}" if role else ""))
+    if not password:
+        typer.echo(f"They can't sign in yet. Set a password: dhancha set-password {name}")
+
+
+@app.command("set-password")
+def set_password_command(
+    name: str,
+    password: Annotated[str, typer.Option(prompt=True, hide_input=True, confirmation_prompt=True)],
+    site: SiteOption = None,
+) -> None:
+    """Change a user's password. It signs them out everywhere."""
+    with _errors(), _engine(site).begin() as conn:
+        set_password(conn, name, password)
+    typer.echo(f"Password changed for {name}")
+
+
+@app.command("set-roles")
+def set_roles_command(
+    name: str,
+    role: Annotated[list[str], typer.Option("--role", help="Repeatable; replaces their roles.")],
+    site: SiteOption = None,
+) -> None:
+    """Replace a user's roles."""
+    with _errors(), _engine(site).begin() as conn:
+        stored = find_user(conn, name)
+        if stored is None:
+            raise AuthError(f"There's no user named {name!r}.")
+        install_roles(conn)
+        set_roles(conn, stored, role)
+    typer.echo(f"{name} now has: {', '.join(role) or '(no roles)'}")
+
+
+@app.command("grant")
+def grant_command(
+    doctype: str,
+    role: Annotated[str, typer.Option(help='Role to grant, e.g. "Sales"')],
+    actions: Annotated[
+        str, typer.Option(help="Comma-separated: read,write,create,delete")
+    ] = "read",
+    if_owner: Annotated[
+        bool, typer.Option("--if-owner", help="Only records the user owns.")
+    ] = False,
+    site: SiteOption = None,
+) -> None:
+    """Say what a role may do with a DocType. Replaces that role's existing rule."""
+    wanted = [a.strip() for a in actions.split(",") if a.strip()]
+    with _errors(), _engine(site).begin() as conn:
+        install_roles(conn)
+        if conn.execute(select(sys_role.c.name).where(sys_role.c.name == role)).first() is None:
+            conn.execute(insert(sys_role).values(name=role))
+            typer.echo(f"Created role {role}")
+        grant(conn, doctype, role, wanted, if_owner=if_owner)  # type: ignore[arg-type]
+    owner_note = " (only their own records)" if if_owner else ""
+    typer.echo(f"{role} can {', '.join(wanted) or 'do nothing with'} {doctype}{owner_note}")
+
+
+@app.command("revoke")
+def revoke_command(doctype: str, role: str, site: SiteOption = None) -> None:
+    """Take away a role's access to a DocType."""
+    with _errors(), _engine(site).begin() as conn:
+        revoke(conn, doctype, role)
+    typer.echo(f"{role} can no longer use {doctype}")
+
+
+@app.command("permissions")
+def permissions_command(site: SiteOption = None) -> None:
+    """Show who can do what on this site."""
+    with _errors(), _engine(site).connect() as conn:
+        users = conn.execute(
+            select(sys_user.c.name, sys_user.c.enabled, sys_user.c.password).order_by(
+                sys_user.c.name
+            )
+        ).all()
+        roles = {row.name: sorted(roles_of(conn, row.name)) for row in users}
+        rules = conn.execute(select(sys_permission).order_by(sys_permission.c.doctype)).all()
+    typer.secho("Users", bold=True)
+    for row in users:
+        notes = [] if row.enabled else ["disabled"]
+        if not row.password:
+            notes.append("no password")
+        suffix = f"  ({', '.join(notes)})" if notes else ""
+        typer.echo(f"  {row.name}: {', '.join(roles[row.name]) or 'no roles'}{suffix}")
+    typer.secho("Permissions", bold=True)
+    if not rules:
+        typer.echo("  none yet; System Managers can still do everything")
+    for rule in rules:
+        allowed = [a for a in ACTIONS if getattr(rule, f"can_{a}")]
+        owner_note = " (own records only)" if rule.if_owner else ""
+        typer.echo(f"  {rule.doctype}: {rule.role} can {', '.join(allowed)}{owner_note}")
 
 
 @app.command("drop-site")
@@ -226,8 +346,11 @@ def _errors() -> Iterator[None]:
     """Turn expected failures into a one-line error instead of a traceback."""
     try:
         yield
-    except (DocTypeError, SchemaSyncError, SiteError) as e:
+    except (AuthError, DocTypeError, SchemaSyncError, SiteError, ValueError) as e:
         _fail(str(e))
+    except IntegrityError as e:
+        # A constraint we didn't check for: show the database's reason, not a traceback.
+        _fail(str(e.orig or e).strip().splitlines()[0])
     except OperationalError as e:
         reason = str(e.orig or e).strip().splitlines()[0]
         _fail(f"can't reach Postgres ({reason}). Is it running? Try: docker compose up -d")

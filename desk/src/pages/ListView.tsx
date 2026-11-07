@@ -5,6 +5,7 @@ import { api, type DocType, type Filter } from "../api";
 import { Banner, NotFound } from "../components/Feedback";
 import { useDebounced, usePageTitle } from "../hooks";
 import { choices, docUrl, listFields, titleField, useDocType } from "../meta";
+import { allowed, useSession } from "../session";
 import { formatValue, sentence, timeAgo } from "../values";
 
 const PAGE_SIZE = 20;
@@ -22,6 +23,7 @@ export function ListView() {
  * the back button keep them. */
 function DocList({ doctype }: { doctype: DocType }) {
   usePageTitle(doctype.label);
+  const { user } = useSession();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const page = Math.max(1, Number(params.get("page")) || 1);
@@ -121,12 +123,16 @@ function DocList({ doctype }: { doctype: DocType }) {
           )}
         </div>
         <div className="actions">
-          <Link className="muted" to={`/build/${doctype.name}`}>
-            Design this form
-          </Link>
-          <Link className="button-link" to={newUrl}>
-            New {doctype.label}
-          </Link>
+          {user?.is_admin && (
+            <Link className="muted" to={`/build/${doctype.name}`}>
+              Design this form
+            </Link>
+          )}
+          {allowed(doctype, "create") && (
+            <Link className="button-link" to={newUrl}>
+              New {doctype.label}
+            </Link>
+          )}
         </div>
       </div>
 
@@ -182,9 +188,11 @@ function DocList({ doctype }: { doctype: DocType }) {
           ) : (
             <>
               <p>No {doctype.label} records yet.</p>
-              <Link className="button-link" to={newUrl}>
-                Create the first one
-              </Link>
+              {allowed(doctype, "create") && (
+                <Link className="button-link" to={newUrl}>
+                  Create the first one
+                </Link>
+              )}
             </>
           )}
         </div>

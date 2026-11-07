@@ -6,6 +6,7 @@ import { Banner, NotFound } from "../components/Feedback";
 import { FormFields } from "../components/FormFields";
 import { usePageTitle, useSaveShortcut, useUnsavedChangesGuard } from "../hooks";
 import { dataFields, docUrl, titleField, useDocType } from "../meta";
+import { allowed } from "../session";
 import {
   changedFields,
   type FormValues,
@@ -90,7 +91,8 @@ function DocForm({
   const leaving = useRef(false); // set right before navigating away after a save or delete
   const askName = !doc && doctype.autoname === "prompt";
   const changed = changedFields(doctype, original, values);
-  const dirty = changed.length > 0 || newName.trim() !== "";
+  const mayEdit = allowed(doctype, doc ? "write" : "create");
+  const dirty = mayEdit && (changed.length > 0 || newName.trim() !== "");
   const title = titleField(doctype);
   usePageTitle(doc ? doc.name : `New ${doctype.label}`);
 
@@ -195,20 +197,23 @@ function DocForm({
             </span>
           )}
           {doc && dirty && <span className="badge badge-warning">Not saved</span>}
-          {doc && (
+          {!mayEdit && <span className="badge">Read only</span>}
+          {doc && allowed(doctype, "delete") && (
             <button type="button" className="danger" onClick={confirmDelete} disabled={remove.isPending}>
               Delete
             </button>
           )}
-          <button
-            type="button"
-            className="primary"
-            onClick={submit}
-            disabled={!dirty || save.isPending}
-            title="Save (Ctrl+S)"
-          >
-            {save.isPending ? "Saving…" : "Save"}
-          </button>
+          {mayEdit && (
+            <button
+              type="button"
+              className="primary"
+              onClick={submit}
+              disabled={!dirty || save.isPending}
+              title="Save (Ctrl+S)"
+            >
+              {save.isPending ? "Saving…" : "Save"}
+            </button>
+          )}
         </div>
       </div>
 
@@ -258,7 +263,12 @@ function DocForm({
         </section>
       )}
 
-      <FormFields fields={doctype.fields} values={values} errors={errors} onChange={setValue} />
+      <FormFields
+        fields={mayEdit ? doctype.fields : doctype.fields.map((f) => ({ ...f, read_only: true }))}
+        values={values}
+        errors={errors}
+        onChange={setValue}
+      />
 
       {doc && (
         <p className="form-meta muted">

@@ -12,6 +12,7 @@ export function Preview({ definition }: { definition: DocTypeDefinition }) {
     autoname: "hash",
     ...definition,
     table: `tab_${definition.name}`,
+    can: ["read", "write", "create", "delete"], // the preview is always fully editable
     columns: [],
   };
   const [values, setValues] = useState<FormValues>(() => initialValues(doctype));
