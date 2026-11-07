@@ -1,4 +1,4 @@
-import type { DataField, DocType } from "../api";
+import type { DataField, DocType, LinkTitles } from "../api";
 import { dataFields } from "../meta";
 import { emptyRow, type GridRow } from "../values";
 import { FieldInput } from "./FieldInput";
@@ -8,12 +8,14 @@ type Props = {
   child: DocType | undefined;
   rows: GridRow[];
   error?: string;
+  /** Titles behind the record's Link values; keyed by value, so reordering rows is safe. */
+  titles?: LinkTitles;
   disabled?: boolean;
   onChange: (rows: GridRow[]) => void;
 };
 
 /** The rows of a child table: one line per row, one input per field of the child. */
-export function GridInput({ field, child, rows, error, disabled, onChange }: Props) {
+export function GridInput({ field, child, rows, error, titles, disabled, onChange }: Props) {
   const label = field.label || field.fieldname;
   if (!child) {
     return (
@@ -65,6 +67,7 @@ export function GridInput({ field, child, rows, error, disabled, onChange }: Pro
                         id={`${field.fieldname}-${index}-${f.fieldname}`}
                         compact // the column heading is the label
                         value={row[f.fieldname]}
+                        titles={titles}
                         disabled={disabled}
                         onChange={(value) => change(index, f.fieldname, value as string | boolean)}
                       />

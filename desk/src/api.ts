@@ -71,6 +71,15 @@ export type Doc = {
   [fieldname: string]: unknown;
 };
 
+/** The words behind Link values, by target DocType and record name:
+ * `{ customer: { "CUST-00002": "Asha Textiles" } }`. Read one the way the field points,
+ * `titles[field.options]?.[value]`, whichever row of a grid it came from. */
+export type LinkTitles = Record<string, Record<string, string>>;
+
+/** A record as the server hands it over: the record itself, and the titles behind the
+ * codes its Link fields store. */
+export type LoadedDoc = { doc: Doc; titles: LinkTitles };
+
 export type FieldError = { field: string; message: string };
 
 export type LogEntry = {
@@ -167,6 +176,13 @@ function listQuery(params: ListParams): string {
   return query.toString();
 }
 
+type DocResponse = { data: Doc; titles?: LinkTitles };
+
+const loaded = (response: DocResponse): LoadedDoc => ({
+  doc: response.data,
+  titles: response.titles ?? {},
+});
+
 export const api = {
   health: () => request<{ status: string; version: string }>("GET", "/api/health"),
   login: (user: string, password: string) =>
@@ -179,11 +195,11 @@ export const api = {
   list: (doctype: string, params: ListParams = {}) =>
     request<{ data: Doc[]; total: number }>("GET", `${resource(doctype)}?${listQuery(params)}`),
   get: (doctype: string, name: string) =>
-    request<{ data: Doc }>("GET", resource(doctype, name)).then((r) => r.data),
+    request<DocResponse>("GET", resource(doctype, name)).then(loaded),
   create: (doctype: string, values: Record<string, unknown>) =>
-    request<{ data: Doc }>("POST", resource(doctype), values).then((r) => r.data),
+    request<DocResponse>("POST", resource(doctype), values).then(loaded),
   update: (doctype: string, name: string, values: Record<string, unknown>) =>
-    request<{ data: Doc }>("PUT", resource(doctype, name), values).then((r) => r.data),
+    request<DocResponse>("PUT", resource(doctype, name), values).then(loaded),
   remove: (doctype: string, name: string) => request<void>("DELETE", resource(doctype, name)),
   /** Create or update a DocType; its table is synced in the same request. */
   saveDocType: (

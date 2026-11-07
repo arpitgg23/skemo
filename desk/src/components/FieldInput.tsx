@@ -1,5 +1,5 @@
 import type { ChangeEvent, ReactNode } from "react";
-import type { DataField } from "../api";
+import type { DataField, LinkTitles } from "../api";
 import { choices } from "../meta";
 import { fieldMessage, type FormValue } from "../values";
 import { LinkInput } from "./LinkInput";
@@ -9,6 +9,8 @@ type Props = {
   value: FormValue | undefined;
   error?: string;
   onChange: (value: FormValue) => void;
+  /** Titles behind this record's Link values, so a Link reads as the record it points at. */
+  titles?: LinkTitles;
   /** Set by a grid cell: its own id, no label and no help text (the column heading says it). */
   id?: string;
   compact?: boolean;
@@ -16,7 +18,16 @@ type Props = {
 };
 
 /** The input for one field, picked by its fieldtype, with its label, help and error. */
-export function FieldInput({ field, value, error, onChange, compact, disabled, ...rest }: Props) {
+export function FieldInput({
+  field,
+  value,
+  error,
+  onChange,
+  titles,
+  compact,
+  disabled,
+  ...rest
+}: Props) {
   const id = rest.id ?? `field-${field.fieldname}`;
   const label = field.label || field.fieldname;
   const describedBy =
@@ -100,7 +111,16 @@ export function FieldInput({ field, value, error, onChange, compact, disabled, .
       );
       break;
     case "Link":
-      control = <LinkInput {...common} target={field.options ?? ""} value={text} onChange={onChange} />;
+      control = (
+        <LinkInput
+          {...common}
+          target={field.options ?? ""}
+          value={text}
+          titles={titles}
+          compact={compact}
+          onChange={onChange}
+        />
+      );
       break;
     default:
       control = (

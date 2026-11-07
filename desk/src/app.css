@@ -524,8 +524,20 @@ button.danger {
   position: relative;
 }
 
+.link-box {
+  position: relative;
+}
+
 .link-input input {
   padding-right: 32px;
+}
+
+/* The code a Link stores, under the name of the record it points at. */
+.link-id {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .link-open {

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
-import { ApiError, api, printUrl, type Doc, type DocType } from "../api";
+import { ApiError, api, printUrl, type Doc, type DocType, type LinkTitles } from "../api";
 import { Banner, NotFound } from "../components/Feedback";
 import { FormFields } from "../components/FormFields";
 import { usePageTitle, useSaveShortcut, useUnsavedChangesGuard } from "../hooks";
@@ -57,9 +57,10 @@ export function FormView() {
   return (
     <DocForm
       // A fresh form for each saved version, so it restarts from what's stored.
-      key={`${doctype.name}/${name ?? "new"}/${doc.data?.modified_at ?? ""}`}
+      key={`${doctype.name}/${name ?? "new"}/${doc.data?.doc.modified_at ?? ""}`}
       doctype={doctype}
-      doc={doc.data}
+      doc={doc.data?.doc}
+      titles={doc.data?.titles}
       flash={flash}
       onSaved={setFlash}
     />
@@ -71,11 +72,13 @@ type Problem = { message: string; details?: string[]; stale?: boolean };
 function DocForm({
   doctype,
   doc,
+  titles,
   flash,
   onSaved,
 }: {
   doctype: DocType;
   doc?: Doc; // undefined for a new record
+  titles?: LinkTitles; // the words behind its Link values
   flash: string | null;
   onSaved: (message: string) => void;
 }) {
@@ -127,17 +130,17 @@ function DocForm({
       return api.create(doctype.name, payload);
     },
     onSuccess: (saved) => {
-      queryClient.setQueryData(["doc", doctype.name, saved.name], saved);
+      queryClient.setQueryData(["doc", doctype.name, saved.doc.name], saved);
       void queryClient.invalidateQueries({ queryKey: ["list", doctype.name] });
       if (doc) {
         onSaved("Saved");
         return;
       }
       // FormView may be reused for the new URL or mounted afresh; the flash covers both.
-      const flash = `Created ${saved.name}`;
+      const flash = `Created ${saved.doc.name}`;
       onSaved(flash);
       leaving.current = true;
-      navigate(docUrl(doctype.name, saved.name), { replace: true, state: { flash } });
+      navigate(docUrl(doctype.name, saved.doc.name), { replace: true, state: { flash } });
     },
     onError: (error) => {
       if (error instanceof ApiError && error.status === 422) {
@@ -293,6 +296,7 @@ function DocForm({
         errors={errors}
         disabled={!mayEdit}
         children={children}
+        titles={titles}
         onChange={setValue}
       />
 

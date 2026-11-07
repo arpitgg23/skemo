@@ -105,9 +105,16 @@ def format_value(field: DocField | None, value: Any) -> str:
             return str(value)
 
 
-def shown_value(field: DocField | None, value: Any, title: Any = None) -> str:
-    """A value as it reads on paper: a Link shows the record's title, not its name."""
-    return title if isinstance(title, str) and title else format_value(field, value)
+def shown_value(field: DocField | None, value: Any, titles: Mapping[str, Any] | None = None) -> str:
+    """A value as it reads on paper: a Link shows the record's title, not its name.
+
+    `titles` is what `Records.link_titles` returns, keyed by target DocType and name.
+    """
+    if field is not None and field.fieldtype == "Link" and field.options and titles:
+        title = (titles.get(field.options) or {}).get(value)
+        if isinstance(title, str) and title:
+            return title
+    return format_value(field, value)
 
 
 def environment() -> Environment:
@@ -123,13 +130,16 @@ def render(
     *,
     site: str,
     titles: Mapping[str, Any] | None = None,
+    children: Mapping[str, DocType] | None = None,
     template: str | None = None,
     source: str = "the print format",
 ) -> str:
     """The printable page for one record, from the app's template or the default layout.
 
-    `titles` is what `Records.link_titles` returns: the words behind each Link value, in
-    the same shape as the record. Left out, every Link simply prints the name it stores.
+    `titles` is what `Records.link_titles` returns: the words behind each Link value, by
+    target DocType and name. Left out, every Link simply prints the name it stores.
+    `children` are the DocTypes behind this one's grids, so their columns print as the
+    fields they are rather than as bare values.
     """
     env = environment()
     titles = titles or {}
@@ -140,9 +150,9 @@ def render(
             doctype=doctype,
             site=site,
             titles=titles,
-            sections=_sections(doctype, doc, titles),
+            sections=_sections(doctype, doc, titles, children or {}),
             show=lambda fieldname: shown_value(
-                _field(doctype, fieldname), doc.get(fieldname), titles.get(fieldname)
+                _field(doctype, fieldname), doc.get(fieldname), titles
             ),
         )
     except TemplateError as e:
@@ -155,7 +165,10 @@ def _field(doctype: DocType, fieldname: str) -> DocField | None:
 
 
 def _sections(
-    doctype: DocType, doc: Mapping[str, Any], titles: Mapping[str, Any]
+    doctype: DocType,
+    doc: Mapping[str, Any],
+    titles: Mapping[str, Any],
+    children: Mapping[str, DocType],
 ) -> list[dict[str, Any]]:
     """The form's own layout, with each value formatted and empty parts left out."""
     sections: list[dict[str, Any]] = []
@@ -173,9 +186,11 @@ def _sections(
         if field.is_table:
             rows = doc.get(field.fieldname) or []
             if rows:
-                current["entries"].append(_grid(field, rows, titles.get(field.fieldname)))
+                current["entries"].append(
+                    _grid(field, rows, titles, children.get(field.options or ""))
+                )
             continue
-        shown = shown_value(field, doc.get(field.fieldname), titles.get(field.fieldname))
+        shown = shown_value(field, doc.get(field.fieldname), titles)
         if shown:
             current["entries"].append(
                 {"kind": "value", "label": field.label or field.fieldname, "value": shown}
@@ -183,32 +198,35 @@ def _sections(
     return [s for s in sections if s["entries"]]
 
 
-def _grid(field: DocField, rows: list[Mapping[str, Any]], titles: Any = None) -> dict[str, Any]:
+def _grid(
+    field: DocField,
+    rows: list[Mapping[str, Any]],
+    titles: Mapping[str, Any],
+    child: DocType | None = None,
+) -> dict[str, Any]:
     """A child table as a printable table: columns from the first row's keys, in order.
 
-    `titles` is one entry per row, as `Records.link_titles` builds it, so a row's Link
-    cells read as the linked record's title.
+    With the child DocType in hand each cell is printed as the field it is — money reads
+    as money, and a Link reads as the record it points at.
     """
     columns = list(rows[0].keys())
-    per_row = titles if isinstance(titles, list) else []
+    fields = {f.fieldname: f for f in child.data_fields} if child else {}
     return {
         "kind": "grid",
         "label": field.label or field.fieldname,
-        "columns": [c.replace("_", " ").title() for c in columns],
+        "columns": [_heading(fields.get(c), c) for c in columns],
         "rows": [
-            [_cell(row.get(c), _row_titles(per_row, i).get(c)) for c in columns]
-            for i, row in enumerate(rows)
+            [_cell(fields.get(c), row.get(c), titles) for c in columns] for row in rows
         ],
     }
 
 
-def _row_titles(per_row: list[Any], index: int) -> Mapping[str, Any]:
-    found = per_row[index] if index < len(per_row) else None
-    return found if isinstance(found, Mapping) else {}
+def _heading(field: DocField | None, fieldname: str) -> str:
+    return field.label if field and field.label else fieldname.replace("_", " ").title()
 
 
-def _cell(value: Any, title: Any = None) -> str:
-    return shown_value(None, value, title) or _plain(value)
+def _cell(field: DocField | None, value: Any, titles: Mapping[str, Any]) -> str:
+    return shown_value(field, value, titles) or _plain(value)
 
 
 def _plain(value: Any) -> str:

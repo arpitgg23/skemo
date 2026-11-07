@@ -143,13 +143,16 @@ class Records:
         return self._with_children(dt, _public(self._fetch(dt, name)))
 
     def link_titles(self, doctype: str | DocType, doc: Mapping[str, Any]) -> dict[str, Any]:
-        """The words behind a record's Link values: `{"customer": "Asha Textiles"}`.
+        """The words behind a record's Link values, by target DocType and record name:
+
+            {"customer": {"CUST-00002": "Asha Textiles"},
+             "product": {"P-1": "Cotton fabric"}}
 
         A Link field stores the target's name, which is usually a code, so anything shown
-        to a person needs the target's title field as well. Grids come back in the same
-        shape the record has, one entry per row, so a caller can walk the two together:
-
-            {"customer": "Asha Textiles", "items": [{"product": "Cotton fabric"}, {}]}
+        to a person needs the target's title field as well. Grid rows are included, and
+        keyed by value rather than by position, so reordering or removing rows on a form
+        can't leave a title attached to the wrong one. Look one up the way the field
+        points: `titles[field.options][value]`.
 
         One query per target DocType, however many values point at it. A link is simply
         left out — and the caller falls back to the stored name — when the target has no
@@ -159,38 +162,25 @@ class Records:
         """
         dt = doctype if isinstance(doctype, DocType) else self.doctypes[doctype]
         wanted: dict[str, set[str]] = {}
-        for target, _, value in self._links(dt, doc):
+        for target, value in self._links(dt, doc):
             wanted.setdefault(target, set()).add(value)
         found = {target: self._titles(target, names) for target, names in wanted.items()}
+        return {target: titles for target, titles in found.items() if titles}
 
-        def titles_of(fields: Sequence[DocField], values: Mapping[str, Any]) -> dict[str, str]:
-            return {
-                f.fieldname: title
-                for target, f, value in self._link_fields(fields, values)
-                if (title := found.get(target, {}).get(value)) and f.fieldname
-            }
-
-        titles: dict[str, Any] = titles_of(dt.data_fields, doc)
-        for field, child, rows in self._grids(dt, doc):
-            titles[field.fieldname] = [titles_of(child.data_fields, row) for row in rows]
-        return titles
-
-    def _links(
-        self, doctype: DocType, doc: Mapping[str, Any]
-    ) -> list[tuple[str, DocField, str]]:
-        """Every Link value in a record and its grids, as (target DocType, field, value)."""
-        links = list(self._link_fields(doctype.data_fields, doc))
-        for _, child, rows in self._grids(doctype, doc):
+    def _links(self, doctype: DocType, doc: Mapping[str, Any]) -> list[tuple[str, str]]:
+        """Every Link value in a record and its grids, as (target DocType, value)."""
+        links = list(self._link_values(doctype.data_fields, doc))
+        for child, rows in self._grids(doctype, doc):
             for row in rows:
-                links += self._link_fields(child.data_fields, row)
+                links += self._link_values(child.data_fields, row)
         return links
 
     @staticmethod
-    def _link_fields(
+    def _link_values(
         fields: Sequence[DocField], values: Mapping[str, Any]
-    ) -> list[tuple[str, DocField, str]]:
+    ) -> list[tuple[str, str]]:
         return [
-            (f.options, f, value)
+            (f.options, value)
             for f in fields
             if f.fieldtype == "Link"
             and f.options
@@ -200,14 +190,14 @@ class Records:
 
     def _grids(
         self, doctype: DocType, doc: Mapping[str, Any]
-    ) -> list[tuple[DocField, DocType, list[Mapping[str, Any]]]]:
+    ) -> list[tuple[DocType, list[Mapping[str, Any]]]]:
         """Each grid on the record, with its child DocType and the rows actually there."""
         grids = []
         for f in doctype.table_fields:
             child = self.doctypes.get(f.options or "")
             rows = doc.get(f.fieldname) or []
             if child is not None and rows:
-                grids.append((f, child, list(rows)))
+                grids.append((child, list(rows)))
         return grids
 
     def _titles(self, doctype: str, names: Collection[str]) -> dict[str, str]:

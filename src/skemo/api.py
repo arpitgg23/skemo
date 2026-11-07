@@ -176,13 +176,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         doctype: str, site: CurrentSite, user: SignedIn, data: JsonBody
     ) -> dict[str, Any]:
         with records(site, user) as r:
-            return {"data": r.insert(doctype, data)}
+            return _record(r, doctype, r.insert(doctype, data))
 
     # {name:path} because names may contain slashes, like invoice number INV/24-25/001.
     @app.get("/api/resource/{doctype}/{name:path}", response_model=None)
     def get_record(doctype: str, name: str, site: CurrentSite, user: SignedIn) -> dict[str, Any]:
         with records(site, user) as r:
-            return {"data": r.get(doctype, name)}
+            return _record(r, doctype, r.get(doctype, name))
 
     @app.put("/api/resource/{doctype}/{name:path}", response_model=None)
     def update_record(
@@ -190,7 +190,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         """Update the fields sent. Include `modified_at` from your read to catch clashing edits."""
         with records(site, user) as r:
-            return {"data": r.update(doctype, name, data)}
+            return _record(r, doctype, r.update(doctype, name, data))
 
     @app.delete("/api/resource/{doctype}/{name:path}", status_code=204)
     def delete_record(doctype: str, name: str, site: CurrentSite, user: SignedIn) -> Response:
@@ -206,6 +206,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             definition = r.doctypes[doctype]
             # Links store a name like CUST-00002; paper should say who that is.
             titles = r.link_titles(definition, record)
+            children = {
+                name: r.doctypes[name]
+                for name in definition.children()
+                if name in r.doctypes
+            }
             found = print_template(r.conn, doctype)
         template, source = found or (None, "the print format")
         return HTMLResponse(
@@ -214,6 +219,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 record,
                 site=site.name,
                 titles=titles,
+                children=children,
                 template=template,
                 source=source,
             )
@@ -384,6 +390,15 @@ def _error_handler(
         return JSONResponse(status_code=status, content={"detail": str(exc)})
 
     return handle
+
+
+def _record(r: Records, doctype: str, record: dict[str, Any]) -> dict[str, Any]:
+    """One record, with the words behind its Link values so a client needn't look them up.
+
+    `titles` is keyed by target DocType and name — see Records.link_titles — so a client
+    reads one as titles[field.options][value], whichever row of a grid it came from.
+    """
+    return {"data": record, "titles": r.link_titles(doctype, record)}
 
 
 def _parse_fields(raw: str | None) -> list[str] | None:

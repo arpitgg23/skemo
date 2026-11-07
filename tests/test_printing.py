@@ -149,16 +149,45 @@ ORDER = {
     "lines": [{"product": "P-1", "qty": 2}, {"product": "P-2", "qty": 1}],
 }
 
-ORDER_TITLES = {"customer": "Asha Textiles", "lines": [{"product": "Cotton fabric"}, {}]}
+ORDER_LINE = doctype(
+    "order_line",
+    field("product", "Link", options="product"),
+    field("qty", "Int"),
+    field("price", "Currency"),
+    is_child=True,
+)
+
+# Keyed by target DocType and name, so a title follows its record wherever it appears.
+ORDER_TITLES = {
+    "customer": {"CUST-00002": "Asha Textiles"},
+    "product": {"P-1": "Cotton fabric"},
+}
 
 
 def test_a_link_prints_who_it_points_at_not_the_code_it_stores():
-    page = render(ORDER_FORM, ORDER, site="demo.localhost", titles=ORDER_TITLES)
+    page = render(
+        ORDER_FORM,
+        ORDER,
+        site="demo.localhost",
+        titles=ORDER_TITLES,
+        children={"order_line": ORDER_LINE},
+    )
     assert "Asha Textiles" in page
     assert "CUST-00002" not in page
-    # Grid cells too, row by row; a row with no title falls back to the stored code.
+    # Grid cells too; a row pointing at something with no title keeps the stored code.
     assert "Cotton fabric" in page
     assert "P-2" in page
+
+
+def test_a_grid_prints_its_columns_as_the_fields_they_are():
+    page = render(
+        ORDER_FORM,
+        {**ORDER, "lines": [{"product": "P-1", "qty": 2, "price": Decimal("145000.5")}]},
+        site="demo.localhost",
+        titles=ORDER_TITLES,
+        children={"order_line": ORDER_LINE},
+    )
+    assert "1,45,000.50" in page  # a Currency column reads as money, not as 145000.5
 
 
 def test_a_link_with_no_title_still_prints_its_code():
@@ -172,7 +201,10 @@ def test_a_template_gets_the_title_and_the_code():
         ORDER,
         site="demo.localhost",
         titles=ORDER_TITLES,
-        template="{{ show('customer') }} / {{ doc.customer }} / {{ titles.get('customer') }}",
+        template=(
+            "{{ show('customer') }} / {{ doc.customer }} / "
+            "{{ titles['customer'][doc.customer] }}"
+        ),
     )
     assert page == "Asha Textiles / CUST-00002 / Asha Textiles"
 
@@ -182,7 +214,6 @@ def test_show_falls_back_to_the_code_and_never_returns_a_grid():
         ORDER_FORM,
         ORDER,
         site="demo.localhost",
-        titles={"lines": [{"product": "Cotton fabric"}]},
         template="[{{ show('customer') }}][{{ show('lines') }}]",
     )
     assert page == "[CUST-00002][]"
@@ -193,7 +224,7 @@ def test_a_title_cannot_inject_markup():
         ORDER_FORM,
         ORDER,
         site="demo.localhost",
-        titles={"customer": "<script>alert('x')</script>"},
+        titles={"customer": {"CUST-00002": "<script>alert('x')</script>"}},
     )
     assert "<script>alert" not in page
     assert "&lt;script&gt;" in page
@@ -290,13 +321,10 @@ def test_titles_come_back_in_the_shape_of_the_record(shop):
     records, order = shop
     titles = records.link_titles("order", order)
 
-    assert titles["customer"] == "Asha Textiles"
-    # One entry per row, in order, so a caller can walk rows and titles together.
-    assert titles["lines"] == [
-        {"product": "Cotton fabric"},
-        {"product": "Silk"},
-        {"product": "Cotton fabric"},
-    ]
+    assert titles["customer"] == {order["customer"]: "Asha Textiles"}
+    # Grid rows too, keyed by value: the same product twice is still one entry, and
+    # reordering rows on a form can't leave a title attached to the wrong one.
+    assert titles["product"] == {"P-1": "Cotton fabric", "P-2": "Silk"}
     # A DocType with no text field has nothing to show but its name, so it's left out.
     assert "slot" not in titles
 
@@ -326,7 +354,7 @@ def test_a_title_needs_permission_to_read_the_record_it_describes(engine, shop, 
     titles = as_user("asha@acme.in").link_titles("order", order)
 
     assert "customer" not in titles  # she may read the order, not who it's for
-    assert titles["lines"][0] == {"product": "Cotton fabric"}
+    assert titles["product"] == {"P-1": "Cotton fabric", "P-2": "Silk"}
 
 
 def test_owner_only_means_titles_for_your_own_records_only(engine, shop, as_user):

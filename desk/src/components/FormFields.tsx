@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { Field } from "../api";
+import type { Field, LinkTitles } from "../api";
 import { formLayout, isGrid } from "../meta";
 import { asRows, type Children, type FormValue, type FormValues } from "../values";
 import { FieldInput } from "./FieldInput";
@@ -12,12 +12,22 @@ type Props = {
   onChange: (fieldname: string, value: FormValue) => void;
   /** Needed to draw a Table field's grid. */
   children?: Children;
+  /** Titles behind the record's Link values. The builder's preview has none. */
+  titles?: LinkTitles;
   disabled?: boolean;
 };
 
 /** A DocType's inputs, laid out in its sections and columns. Used by the record form and
  * by the builder's live preview, so the preview is exactly what people will see. */
-export function FormFields({ fields, values, errors = {}, onChange, children, disabled }: Props) {
+export function FormFields({
+  fields,
+  values,
+  errors = {},
+  onChange,
+  children,
+  titles,
+  disabled,
+}: Props) {
   return (
     <>
       {formLayout(fields).map((section, i) => (
@@ -34,6 +44,7 @@ export function FormFields({ fields, values, errors = {}, onChange, children, di
                       child={children?.(field.options ?? "")}
                       rows={asRows(values[field.fieldname])}
                       error={errors[field.fieldname]}
+                      titles={titles}
                       disabled={disabled || field.read_only}
                       onChange={(rows) => onChange(field.fieldname, rows)}
                     />
@@ -43,6 +54,7 @@ export function FormFields({ fields, values, errors = {}, onChange, children, di
                       field={field}
                       value={values[field.fieldname]}
                       error={errors[field.fieldname]}
+                      titles={titles}
                       disabled={disabled}
                       onChange={(value) => onChange(field.fieldname, value)}
                     />
