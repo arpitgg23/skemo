@@ -25,13 +25,13 @@ def test_cli_end_to_end(monkeypatch, settings, site_name):
         # Installing the app creates its tables; migrating again changes nothing.
         out = cli("install-app", str(CRM_APP))
         assert "Installed CRM (crm 0.1.0)" in out
-        for table in TABLES:
+        for table in TABLES:  # the app also ships invoice and invoice_item
             assert f"CREATE TABLE {table}" in out
         assert "Nothing to change" in cli("migrate")
 
         listed = cli("list-apps")
         assert "crm 0.1.0" in listed
-        assert "DocTypes: customer, deal, lead" in listed
+        assert "DocTypes: customer, deal, invoice, invoice_item, lead" in listed
 
         assert "CREATE TABLE tab_lead" in cli("schema-log")
 
@@ -49,7 +49,7 @@ def test_cli_end_to_end(monkeypatch, settings, site_name):
         try:
             assert "now belongs to crm" in exported
             assert (CRM_APP / "doctypes" / "note.json").is_file()
-            assert "DocTypes: customer, deal, lead, note" in cli("list-apps")
+            assert "invoice_item, lead, note" in cli("list-apps")
         finally:
             (CRM_APP / "doctypes" / "note.json").unlink(missing_ok=True)
     finally:

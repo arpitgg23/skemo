@@ -83,6 +83,9 @@ FIELD_TYPES: dict[str, FieldType] = {
             lambda f: _string(DEFAULT_LENGTH),
             needs_options=True,
         ),
+        # A grid of rows from a child DocType. It has no column of its own: the rows live
+        # in the child's own table, pointing back at this record.
+        FieldType("Table", needs_options=True),
         FieldType("Section Break"),
         FieldType("Column Break"),
     )

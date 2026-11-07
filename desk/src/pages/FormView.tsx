@@ -5,10 +5,12 @@ import { ApiError, api, type Doc, type DocType } from "../api";
 import { Banner, NotFound } from "../components/Feedback";
 import { FormFields } from "../components/FormFields";
 import { usePageTitle, useSaveShortcut, useUnsavedChangesGuard } from "../hooks";
-import { dataFields, docUrl, titleField, useDocType } from "../meta";
+import { childLookup, dataFields, docUrl, isGrid, titleField, useDocType, useDocTypes } from "../meta";
 import { allowed } from "../session";
 import {
+  asRows,
   changedFields,
+  rowToApi,
   type FormValues,
   fieldMessage,
   fromFormValue,
@@ -79,10 +81,13 @@ function DocForm({
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { data } = useDocTypes();
+  const children = useMemo(() => childLookup(data?.doctypes), [data]);
   const fields = useMemo(() => new Map(dataFields(doctype).map((f) => [f.fieldname, f])), [doctype]);
+  const grids = useMemo(() => doctype.fields.filter(isGrid), [doctype]);
   const original = useMemo(
-    () => (doc ? toFormValues(doctype, doc) : initialValues(doctype)),
-    [doctype, doc],
+    () => (doc ? toFormValues(doctype, doc, children) : initialValues(doctype, children)),
+    [doctype, doc, children],
   );
   const [values, setValues] = useState<FormValues>(original);
   const [newName, setNewName] = useState(""); // only for autoname "prompt"
@@ -98,9 +103,16 @@ function DocForm({
 
   const save = useMutation({
     mutationFn: () => {
+      const grid = (fieldname: string) => {
+        const child = children(grids.find((f) => f.fieldname === fieldname)?.options ?? "");
+        return child ? asRows(values[fieldname]).map((row) => rowToApi(child, row)) : [];
+      };
       if (doc) {
         const payload = Object.fromEntries(
-          changed.map((n) => [n, fromFormValue(fields.get(n)!, values[n])]),
+          changed.map((n) => [
+            n,
+            fields.has(n) ? fromFormValue(fields.get(n)!, values[n]) : grid(n),
+          ]),
         );
         // modified_at lets the server refuse the save if someone else changed it first.
         return api.update(doctype.name, doc.name, { ...payload, modified_at: doc.modified_at });
@@ -110,6 +122,7 @@ function DocForm({
         const value = fromFormValue(field, values[fieldname]);
         if (value !== null) payload[fieldname] = value;
       }
+      for (const field of grids) payload[field.fieldname] = grid(field.fieldname);
       if (askName) payload.name = newName.trim();
       return api.create(doctype.name, payload);
     },
@@ -155,7 +168,7 @@ function DocForm({
 
   function submit() {
     if (!dirty || save.isPending) return;
-    const missing = missingRequired(doctype, values);
+    const missing = missingRequired(doctype, values, children);
     if (askName && !newName.trim()) missing.name = "is required";
     setErrors(missing);
     if (Object.keys(missing).length > 0) {
@@ -264,9 +277,11 @@ function DocForm({
       )}
 
       <FormFields
-        fields={mayEdit ? doctype.fields : doctype.fields.map((f) => ({ ...f, read_only: true }))}
+        fields={doctype.fields}
         values={values}
         errors={errors}
+        disabled={!mayEdit}
+        children={children}
         onChange={setValue}
       />
 

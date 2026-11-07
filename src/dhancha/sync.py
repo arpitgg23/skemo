@@ -24,6 +24,8 @@ from sqlalchemy import (
     BigInteger,
     Column,
     DateTime,
+    Index,
+    Integer,
     MetaData,
     String,
     Table,
@@ -80,15 +82,35 @@ class SyncResult:
 
 
 def build_table(doctype: DocType, metadata: MetaData) -> Table:
-    """The table a DocType should have: standard columns, then one per data field."""
-    columns = [
-        Column("id", BigInteger, primary_key=True),
-        Column("name", String(140), nullable=False, unique=True),
-        Column("owner", String(140)),
-        Column("created_at", DateTime(timezone=True), server_default=func.now()),
-        Column("modified_at", DateTime(timezone=True), server_default=func.now()),
-        Column("modified_by", String(140)),
-    ]
+    """The table a DocType should have: standard columns, then one per data field.
+
+    A child DocType's rows belong to a record instead of standing on their own, so they
+    carry which record and which field they're under, and their position in the grid.
+    """
+    columns = (
+        [
+            Column("id", BigInteger, primary_key=True),
+            Column("parent", String(140), nullable=False),
+            Column("parenttype", String(63), nullable=False),
+            Column("parentfield", String(63), nullable=False),
+            Column("idx", Integer, nullable=False),
+            Index(
+                f"ix_{doctype.table_name}_parent",
+                "parenttype",
+                "parent",
+                "parentfield",
+            ),
+        ]
+        if doctype.is_child
+        else [
+            Column("id", BigInteger, primary_key=True),
+            Column("name", String(140), nullable=False, unique=True),
+            Column("owner", String(140)),
+            Column("created_at", DateTime(timezone=True), server_default=func.now()),
+            Column("modified_at", DateTime(timezone=True), server_default=func.now()),
+            Column("modified_by", String(140)),
+        ]
+    )
     for f in doctype.data_fields:
         # "Required" is checked by the API, not with NOT NULL, so toggling it needs no DDL.
         columns.append(

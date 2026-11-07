@@ -22,10 +22,25 @@ export function useDocType(name: string | undefined) {
 
 export const docUrl = (doctype: string, name: string) => `/app/${doctype}/${namePath(name)}`;
 
+/** A grid of child rows. It holds a value, but not one a single input can show. */
+export type GridField = DataField & { fieldtype: "Table" };
+
+export const isGrid = (f: Field): f is GridField =>
+  f.fieldtype === "Table" && Boolean(f.fieldname);
+
 export const isDataField = (f: Field): f is DataField =>
-  f.fieldtype !== "Section Break" && f.fieldtype !== "Column Break" && Boolean(f.fieldname);
+  f.fieldtype !== "Section Break" &&
+  f.fieldtype !== "Column Break" &&
+  f.fieldtype !== "Table" &&
+  Boolean(f.fieldname);
 
 export const dataFields = (doctype: DocType): DataField[] => doctype.fields.filter(isDataField);
+
+/** Looks up the child DocType behind a Table field. */
+export function childLookup(doctypes: DocType[] | undefined) {
+  const byName = new Map((doctypes ?? []).map((dt) => [dt.name, dt]));
+  return (name: string) => byName.get(name);
+}
 
 export const choices = (field: Field): string[] =>
   (field.options ?? "")
@@ -64,7 +79,9 @@ export function formLayout(fields: Field[]): Section[] {
       sections.push(current);
     }
     if (field.fieldtype === "Column Break") current.columns.push([]);
-    else if (isDataField(field) && !field.hidden) current.columns[current.columns.length - 1].push(field);
+    else if ((isDataField(field) || isGrid(field)) && !field.hidden) {
+      current.columns[current.columns.length - 1].push(field);
+    }
   }
   return sections
     .map((s) => ({ ...s, columns: s.columns.filter((c) => c.length > 0) }))

@@ -9,6 +9,7 @@ export type FieldType =
   | "Check"
   | "Select"
   | "Link"
+  | "Table"
   | "Section Break"
   | "Column Break";
 
@@ -54,6 +55,7 @@ export type DocType = {
   autoname: string;
   description?: string | null;
   app?: string | null; // the app whose files it comes from; null means the builder made it
+  is_child?: boolean; // holds the rows of a Table field, rather than standing on its own
   can: Action[]; // what the signed-in user may do with it
   fields: Field[];
   columns: Column[]; // what the table really has in Postgres
@@ -97,6 +99,7 @@ export type DocTypeDefinition = {
   module?: string;
   autoname?: string;
   description?: string;
+  is_child?: boolean;
   fields: Field[];
 };
 

@@ -1,0 +1,12 @@
+{
+  "name": "invoice_item",
+  "label": "Invoice Item",
+  "module": "CRM",
+  "is_child": true,
+  "fields": [
+    { "fieldname": "description", "label": "Item", "fieldtype": "Data", "reqd": true },
+    { "fieldname": "qty", "label": "Qty", "fieldtype": "Float", "reqd": true, "default": "1" },
+    { "fieldname": "rate", "label": "Rate", "fieldtype": "Currency", "reqd": true },
+    { "fieldname": "amount", "label": "Amount", "fieldtype": "Currency", "read_only": true }
+  ]
+}

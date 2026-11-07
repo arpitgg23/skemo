@@ -23,6 +23,8 @@ export type Draft = {
   module: string;
   autoname: string;
   description: string;
+  // A child DocType holds the rows of a Table field: no screens or names of its own.
+  isChild: boolean;
   sections: Section[];
 };
 
@@ -51,6 +53,7 @@ export const PALETTE: { fieldtype: FieldType; label: string }[] = [
   { fieldtype: "Check", label: "Checkbox" },
   { fieldtype: "Select", label: "Dropdown" },
   { fieldtype: "Link", label: "Link" },
+  { fieldtype: "Table", label: "Table" },
 ];
 
 export const typeLabel = (fieldtype: FieldType) =>
@@ -110,6 +113,7 @@ export function toDraft(doctype?: DocType | DocTypeDefinition): Draft {
     module: doctype?.module ?? "",
     autoname: doctype?.autoname ?? "hash",
     description: doctype?.description ?? "",
+    isChild: Boolean(doctype?.is_child),
     sections: sections.length ? sections : [newSection()],
   };
 }
@@ -142,9 +146,11 @@ export function toSave(draft: Draft): SavePlan {
   const definition: DocTypeDefinition = {
     name: draft.name,
     module: draft.module.trim() || "Core",
-    autoname: draft.autoname,
+    // A child's rows are named by their position, so it never has a naming rule.
+    autoname: draft.isChild ? "hash" : draft.autoname,
     fields,
   };
+  if (draft.isChild) definition.is_child = true;
   if (draft.label.trim()) definition.label = draft.label.trim();
   if (draft.description.trim()) definition.description = draft.description.trim();
   return { definition, renames, keys };
@@ -178,7 +184,13 @@ export function draftProblems(draft: Draft, knownDoctypes: string[]): Record<str
     else if (seen.has(name)) problem = `Another field is already called "${name}"`;
     else if (f.fieldtype === "Select" && choices(f).length === 0) problem = "Add at least one choice";
     else if (f.fieldtype === "Link" && !f.options) problem = "Choose the DocType it links to";
-    else if (f.fieldtype === "Link" && f.options !== draft.name && !knownDoctypes.includes(f.options ?? "")) {
+    else if (f.fieldtype === "Table" && !f.options) problem = "Choose the child DocType it holds";
+    else if (f.fieldtype === "Table" && draft.isChild) problem = "A child DocType can't hold a table";
+    else if (
+      (f.fieldtype === "Link" || f.fieldtype === "Table") &&
+      f.options !== draft.name &&
+      !knownDoctypes.includes(f.options ?? "")
+    ) {
       problem = `There's no DocType named "${f.options}"`;
     }
     if (problem) problems[f.key] = problem;
@@ -200,7 +212,12 @@ export function splitAutoname(autoname: string): [string, string?] {
 }
 
 export type Action =
-  | { type: "doc"; changes: Partial<Pick<Draft, "label" | "name" | "module" | "autoname" | "description">> }
+  | {
+      type: "doc";
+      changes: Partial<
+        Pick<Draft, "label" | "name" | "module" | "autoname" | "description" | "isChild">
+      >;
+    }
   | { type: "addField"; key: string; fieldtype: FieldType; columnKey: string; index?: number }
   | { type: "updateField"; key: string; changes: Partial<Field> }
   | { type: "changeType"; key: string; fieldtype: FieldType }

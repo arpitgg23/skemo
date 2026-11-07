@@ -53,13 +53,13 @@ function Desk() {
       <div className="shell-body">
         <nav className="sidebar" aria-label="DocTypes">
           {error && <p className="error-text">Can't load DocTypes: {error.message}</p>}
-          {data?.doctypes.length === 0 && (
+          {data?.doctypes.filter((dt) => !dt.is_child).length === 0 && (
             <p className="muted small">
               {user?.is_admin ? "No DocTypes yet" : "Nothing shared with you yet"}
             </p>
           )}
           {data &&
-            groupByModule(data.doctypes).map(([module, doctypes]) => (
+            groupByModule(data.doctypes.filter((dt) => !dt.is_child)).map(([module, doctypes]) => (
               <div key={module} className="nav-group">
                 <p className="nav-module">{module}</p>
                 {doctypes.map((dt) => (

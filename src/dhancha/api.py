@@ -202,11 +202,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         engine = get_engine(site, settings)
         with engine.connect() as conn:
             permissions = Permissions.for_user(conn, user)
-            definitions = {
-                name: dt
-                for name, dt in load_doctypes(conn).items()
-                if permissions.can(name, "read")
-            }
+            stored = load_doctypes(conn)
+            definitions = {name: dt for name, dt in stored.items() if permissions.can(name, "read")}
+            # A child DocType has no rules of its own: it comes along with each record
+            # that holds its rows, so the desk can draw that grid.
+            for dt in list(definitions.values()):
+                for child in sorted(dt.children()):
+                    if child in stored:
+                        definitions.setdefault(child, stored[child])
             owners = app_owners(conn)
             inspector = inspect(conn)
             live = {
@@ -228,6 +231,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "autoname": dt.autoname,
                     "description": dt.description,
                     "app": owners.get(dt.name),  # None when the builder made it
+                    "is_child": dt.is_child,
                     "can": sorted(a for a in ACTIONS if permissions.can(dt.name, a)),
                     "fields": [f.model_dump(exclude_defaults=True) for f in dt.fields],
                     "columns": [

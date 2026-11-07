@@ -60,7 +60,7 @@ describe("initialValues", () => {
       field("vip", "Check", { default: "1" }),
       field("note"),
     ]);
-    expect(initialValues(dt, new Date(2026, 8, 22, 15, 0))).toEqual({
+    expect(initialValues(dt, undefined, new Date(2026, 8, 22, 15, 0))).toEqual({
       stage: "Open",
       on: "2026-09-22",
       vip: true,

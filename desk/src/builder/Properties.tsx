@@ -72,11 +72,21 @@ function FieldProperties({ field, errors, doctypes, dispatch, onSelect }: Props 
       {field.fieldtype === "Select" && (
         <TextareaProp label="Choices" hint="One per line" value={field.options ?? ""} onChange={(options) => set({ options })} />
       )}
-      {field.fieldtype === "Link" && (
+      {(field.fieldtype === "Link" || field.fieldtype === "Table") && (
         <SelectProp
-          label="Links to"
+          label={field.fieldtype === "Link" ? "Links to" : "Rows from"}
           value={field.options ?? ""}
-          options={[["", "Choose a DocType…"], ...doctypes.map((dt): [string, string] => [dt.name, dt.label])]}
+          hint={
+            field.fieldtype === "Table"
+              ? "A child DocType: its rows belong to this record."
+              : undefined
+          }
+          options={[
+            ["", "Choose a DocType…"],
+            ...doctypes
+              .filter((dt) => Boolean(dt.is_child) === (field.fieldtype === "Table"))
+              .map((dt): [string, string] => [dt.name, dt.label]),
+          ]}
           onChange={(options) => set({ options: options || undefined })}
         />
       )}
@@ -213,7 +223,19 @@ function DocTypeProperties({ draft, errors, doctypes, dispatch, onDelete }: Prop
           <option key={m} value={m} />
         ))}
       </datalist>
-      <NamingProps draft={draft} onChange={(autoname) => set({ autoname })} />
+      {draft.isNew ? (
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={draft.isChild}
+            onChange={(event) => dispatch({ type: "doc", changes: { isChild: event.target.checked } })}
+          />
+          Rows inside another form (a child table)
+        </label>
+      ) : (
+        draft.isChild && <p className="help">Its rows belong to whichever record holds them.</p>
+      )}
+      {!draft.isChild && <NamingProps draft={draft} onChange={(autoname) => set({ autoname })} />}
       <TextareaProp label="Description" value={draft.description} onChange={(description) => set({ description })} />
       {!draft.isNew && (
         <>

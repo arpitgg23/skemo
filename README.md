@@ -106,16 +106,17 @@ Next to a DocType's JSON, a module with a class adds the app's own logic:
 # crm/doctypes/deal.py
 from dhancha.hooks import DocumentHooks, ValidationError
 
+
 class Deal(DocumentHooks):
     def validate(self, doc):
         if doc["amount"] is not None and doc["amount"] < 0:
-            doc.error("amount", "can't be negative")      # shown under that input
+            doc.error("amount", "can't be negative")  # shown under that input
         if doc["stage"] == "Won" and doc["amount"] is None:
             raise ValidationError("A won deal needs an amount.", field="amount")
 
     def before_save(self, doc):
         if doc["stage"] == "Won":
-            doc["probability"] = 100                      # computed, on create and update
+            doc["probability"] = 100  # computed, on create and update
 ```
 
 `validate`, `before_save`, `after_save`, and the per-operation `before_insert`,

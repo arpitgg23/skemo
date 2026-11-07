@@ -1,11 +1,14 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { DocType, DocTypeDefinition } from "../api";
 import { FormFields } from "../components/FormFields";
+import { childLookup, useDocTypes } from "../meta";
 import { initialValues, type FormValues } from "../values";
 
 /** The form exactly as people will see it, built from the unsaved draft. Typing into it
  * saves nothing. */
 export function Preview({ definition }: { definition: DocTypeDefinition }) {
+  const { data } = useDocTypes();
+  const children = useMemo(() => childLookup(data?.doctypes), [data]);
   const doctype: DocType = {
     label: definition.name,
     module: "Core",
@@ -15,7 +18,7 @@ export function Preview({ definition }: { definition: DocTypeDefinition }) {
     can: ["read", "write", "create", "delete"], // the preview is always fully editable
     columns: [],
   };
-  const [values, setValues] = useState<FormValues>(() => initialValues(doctype));
+  const [values, setValues] = useState<FormValues>(() => initialValues(doctype, children));
   const hasFields = definition.fields.some((f) => f.fieldname);
   return (
     <div className="preview">
@@ -27,6 +30,7 @@ export function Preview({ definition }: { definition: DocTypeDefinition }) {
         <FormFields
           fields={definition.fields}
           values={values}
+          children={children}
           onChange={(fieldname, value) => setValues((current) => ({ ...current, [fieldname]: value }))}
         />
       ) : (

@@ -9,18 +9,23 @@ type Props = {
   value: FormValue | undefined;
   error?: string;
   onChange: (value: FormValue) => void;
+  /** Set by a grid cell: its own id, no label and no help text (the column heading says it). */
+  id?: string;
+  compact?: boolean;
+  disabled?: boolean;
 };
 
 /** The input for one field, picked by its fieldtype, with its label, help and error. */
-export function FieldInput({ field, value, error, onChange }: Props) {
-  const id = `field-${field.fieldname}`;
+export function FieldInput({ field, value, error, onChange, compact, disabled, ...rest }: Props) {
+  const id = rest.id ?? `field-${field.fieldname}`;
   const label = field.label || field.fieldname;
   const describedBy =
-    [field.description && `${id}-help`, error && `${id}-error`].filter(Boolean).join(" ") ||
-    undefined;
+    [!compact && field.description && `${id}-help`, error && `${id}-error`]
+      .filter(Boolean)
+      .join(" ") || undefined;
   const common = {
     id,
-    disabled: field.read_only,
+    disabled: disabled || field.read_only,
     "aria-invalid": error ? true : undefined,
     "aria-required": field.reqd || undefined,
     "aria-describedby": describedBy,
@@ -31,7 +36,7 @@ export function FieldInput({ field, value, error, onChange }: Props) {
 
   const notes = (
     <>
-      {field.description && (
+      {!compact && field.description && (
         <p id={`${id}-help`} className="help">
           {field.description}
         </p>
@@ -51,10 +56,11 @@ export function FieldInput({ field, value, error, onChange }: Props) {
           <input
             type="checkbox"
             {...common}
+            aria-label={compact ? label : undefined}
             checked={value === true}
             onChange={(event) => onChange(event.target.checked)}
           />
-          {label}
+          {!compact && label}
         </label>
         {notes}
       </div>
@@ -103,15 +109,21 @@ export function FieldInput({ field, value, error, onChange }: Props) {
   }
 
   return (
-    <div className={`field${error ? " has-error" : ""}`}>
-      <label htmlFor={id}>
-        {label}
-        {field.reqd && (
-          <span className="required" aria-hidden="true">
-            {" *"}
-          </span>
-        )}
-      </label>
+    <div className={`field${error ? " has-error" : ""}${compact ? " field-compact" : ""}`}>
+      {compact ? (
+        <label className="sr-only" htmlFor={id}>
+          {label}
+        </label>
+      ) : (
+        <label htmlFor={id}>
+          {label}
+          {field.reqd && (
+            <span className="required" aria-hidden="true">
+              {" *"}
+            </span>
+          )}
+        </label>
+      )}
       {control}
       {notes}
     </div>

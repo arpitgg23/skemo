@@ -34,6 +34,8 @@ DEFAULT_USER = ADMIN
 # Set by the system. Clients may echo them back from a read, so they're ignored on write,
 # except modified_at on update, which is compared to catch concurrent edits.
 SYSTEM_COLUMNS = ("owner", "created_at", "modified_at", "modified_by")
+# A child row carries which record it belongs to; a client never sets these.
+CHILD_COLUMNS = ("parent", "parenttype", "parentfield", "idx")
 
 # Re-exported so `from dhancha.documents import DocumentNotFound` still works.
 __all__ = [
@@ -99,11 +101,13 @@ class Records:
     def insert(
         self, doctype: str, data: Mapping[str, Any], *, today: date | None = None
     ) -> dict[str, Any]:
-        """Create a record and return it as stored."""
+        """Create a record, with any child rows, and return it as stored."""
         dt = self._doctype(doctype, "create")
         today = today or date.today()
         payload, errors = _split(dt, data)
         given_name = payload.pop("name", None)
+        grids, grid_errors = self._clean_grids(dt, payload, today)
+        errors += grid_errors
         values = {f.fieldname: _default(f, today) for f in dt.data_fields} | payload
         cleaned, field_errors = _clean(dt, values)
         errors += field_errors
@@ -113,10 +117,12 @@ class Records:
             raise DocumentValidationError(errors)
 
         before_hooks = dict(cleaned)
-        doc = self._doc(dt, cleaned, is_new=True)
+        doc = self._doc(dt, {**cleaned, **grids}, is_new=True)
         run_hooks(self.hooks.get(doctype), ("before_insert", "before_save", "validate"), doc)
         # Hooks may have changed values, so check those the same way as anything else.
         cleaned, errors = _clean(dt, doc.values)
+        grids, grid_errors = self._clean_grids(dt, doc.values, today)
+        errors += grid_errors
         errors += self._link_errors(dt, cleaned, _differs(cleaned, before_hooks))
         if errors:
             raise DocumentValidationError(errors)
@@ -127,12 +133,14 @@ class Records:
             name = make_name(self.conn, dt, cleaned, today=today)
         row = {**cleaned, "name": name, "owner": self.user, "modified_by": self.user}
         written = self._write(dt, insert(self._table(dt)).values(row), row)
+        self._write_grids(dt, name, grids)
         doc.name = name
-        doc.values = dict(written)
+        doc.values = {**written, **grids}
         return self._after(dt, doc, ("after_insert", "after_save"), written)
 
     def get(self, doctype: str, name: str) -> dict[str, Any]:
-        return _public(self._fetch(self._doctype(doctype, "read"), name))
+        dt = self._doctype(doctype, "read")
+        return self._with_children(dt, _public(self._fetch(dt, name)))
 
     def update(self, doctype: str, name: str, data: Mapping[str, Any]) -> dict[str, Any]:
         """Change some fields of a record and return it as stored.
@@ -144,6 +152,9 @@ class Records:
         dt = self._doctype(doctype, "write")
         current = self._fetch(dt, name, lock=True)
         payload, errors = _split(dt, data, keep=("modified_at",))
+        stored_grids = self._read_grids(dt, name)
+        grids, grid_errors = self._clean_grids(dt, payload, date.today(), current=stored_grids)
+        errors += grid_errors
         if payload.pop("name", name) != name:
             errors.append({"field": "name", "message": "can't be changed yet"})
         if "modified_at" in payload:
@@ -167,16 +178,29 @@ class Records:
             raise DocumentValidationError(errors)
 
         before_hooks = dict(cleaned)
-        doc = self._doc(dt, cleaned, is_new=False, name=name, previous=current)
+        doc = self._doc(
+            dt,
+            {**cleaned, **grids},
+            is_new=False,
+            name=name,
+            previous={**current, **stored_grids},
+        )
         run_hooks(self.hooks.get(doctype), ("before_update", "before_save", "validate"), doc)
         cleaned, errors = _clean(dt, doc.values)
+        grids, grid_errors = self._clean_grids(dt, doc.values, date.today(), current=stored_grids)
+        errors += grid_errors
         # Whatever a hook changed counts as part of this save, and is checked like the rest.
         changed = {k: v for k, v in cleaned.items() if v != current[k]}
         errors += self._link_errors(dt, cleaned, _differs(cleaned, before_hooks))
         if errors:
             raise DocumentValidationError(errors)
-        if not changed:
-            return _public(current)
+        grids_changed = any(rows != stored_grids[field] for field, rows in grids.items())
+        if not changed and not grids_changed:
+            return self._with_children(dt, _public(current))
+        if grids_changed:
+            # Only a grid changed, but the record was still touched: the UPDATE below
+            # still stamps modified_at and modified_by.
+            self._write_grids(dt, name, grids)
 
         table = self._table(dt)
         stmt = (
@@ -193,10 +217,14 @@ class Records:
         dt = self._doctype(doctype, "delete")
         current = self._fetch(dt, name, lock=True)
         self._check_not_linked(dt, name, current["id"])
-        doc = self._doc(dt, dict(current), is_new=False, name=name, previous=current)
+        stored = self._with_children(dt, _public(current))
+        doc = self._doc(dt, stored, is_new=False, name=name, previous=stored)
         run_hooks(self.hooks.get(doctype), ("before_delete",), doc)
         table = self._table(dt)
         quoted = self.conn.dialect.identifier_preparer.quote(table.name)
+        batch_id = uuid.uuid4()
+        # The record's grid rows go to the archive with it, under the same batch.
+        self._archive_grids(dt, name, batch_id)
         self.conn.execute(
             text(
                 "INSERT INTO sys_archive (batch_id, actor, table_name, row_id, value) "
@@ -204,7 +232,7 @@ class Records:
                 "WHERE t.id = :id"
             ),
             {
-                "batch_id": uuid.uuid4(),
+                "batch_id": batch_id,
                 "actor": self.user,
                 "table": table.name,
                 "id": current["id"],
@@ -248,6 +276,145 @@ class Records:
         ).scalar_one()
         return {"data": data, "total": total}
 
+    # --- child rows -------------------------------------------------------------------
+
+    def _child(self, field: DocField) -> DocType:
+        child = self.doctypes.get(field.options or "")
+        if child is None:  # the DocType was saved before its child; migrate puts it right
+            raise DocumentNotFound(f"{field.fieldname}: no child DocType named {field.options!r}")
+        return child
+
+    def _read_grids(self, doctype: DocType, name: str) -> dict[str, list[dict[str, Any]]]:
+        """Every grid's rows for one record, each in its stored order."""
+        grids = {}
+        for field in doctype.table_fields:
+            child = self._child(field)
+            table = self._table(child)
+            rows = self.conn.execute(
+                select(table)
+                .where(
+                    table.c.parenttype == doctype.name,
+                    table.c.parent == name,
+                    table.c.parentfield == field.fieldname,
+                )
+                .order_by(table.c.idx)
+            ).mappings()
+            grids[field.fieldname] = [
+                {f.fieldname: row[f.fieldname] for f in child.data_fields} for row in rows
+            ]
+        return grids
+
+    def _with_children(self, doctype: DocType, record: dict[str, Any]) -> dict[str, Any]:
+        if not doctype.table_fields:
+            return record
+        return {**record, **self._read_grids(doctype, record["name"])}
+
+    def _clean_grids(
+        self,
+        doctype: DocType,
+        payload: dict[str, Any],
+        today: date,
+        current: Mapping[str, list[dict[str, Any]]] | None = None,
+    ) -> tuple[dict[str, list[dict[str, Any]]], Errors]:
+        """Take the grids out of the payload and check every row, like any other value.
+
+        A grid left out of the payload keeps the rows it already had.
+        """
+        grids: dict[str, list[dict[str, Any]]] = {}
+        errors: Errors = []
+        for field in doctype.table_fields:
+            fieldname = field.fieldname or ""
+            if fieldname not in payload:
+                grids[fieldname] = list(current[fieldname]) if current else []
+                continue
+            given = payload.pop(fieldname)
+            if given is None:
+                grids[fieldname] = []
+                continue
+            if not isinstance(given, Sequence) or isinstance(given, str):
+                errors.append({"field": fieldname, "message": "should be a list of rows"})
+                grids[fieldname] = list(current[fieldname]) if current else []
+                continue
+            child = self._child(field)
+            rows: list[dict[str, Any]] = []
+            for index, raw in enumerate(given, start=1):
+                if not isinstance(raw, Mapping):
+                    errors.append({"field": fieldname, "message": f"row {index} isn't a row"})
+                    continue
+                row_payload, row_errors = _split(child, raw, ignore=CHILD_COLUMNS)
+                row_payload.pop("name", None)  # child rows have no name of their own
+                values = {f.fieldname: _default(f, today) for f in child.data_fields}
+                cleaned, field_errors = _clean(child, values | row_payload)
+                errors += [
+                    {"field": fieldname, "message": f"row {index}: {e['field']} {e['message']}"}
+                    for e in row_errors + field_errors
+                ]
+                errors += [
+                    {"field": fieldname, "message": f"row {index}: {e['message']}"}
+                    for e in self._link_errors(child, cleaned, cleaned.keys())
+                ]
+                rows.append(cleaned)
+            grids[fieldname] = rows
+        return grids, errors
+
+    def _write_grids(
+        self, doctype: DocType, name: str, grids: Mapping[str, list[dict[str, Any]]]
+    ) -> None:
+        """Replace a record's grid rows with the ones given, in the order given."""
+        for field in doctype.table_fields:
+            fieldname = field.fieldname or ""
+            table = self._table(self._child(field))
+            belongs_to = (
+                table.c.parenttype == doctype.name,
+                table.c.parent == name,
+                table.c.parentfield == fieldname,
+            )
+            self.conn.execute(delete(table).where(*belongs_to))
+            rows = grids.get(fieldname) or []
+            if rows:
+                self.conn.execute(
+                    insert(table),
+                    [
+                        {
+                            **row,
+                            "parent": name,
+                            "parenttype": doctype.name,
+                            "parentfield": fieldname,
+                            "idx": index,
+                        }
+                        for index, row in enumerate(rows, start=1)
+                    ],
+                )
+
+    def _archive_grids(self, doctype: DocType, name: str, batch_id: uuid.UUID) -> None:
+        """Copy a record's grid rows to the archive, then remove them."""
+        quote = self.conn.dialect.identifier_preparer.quote
+        for field in doctype.table_fields:
+            table = self._table(self._child(field))
+            params = {
+                "batch_id": batch_id,
+                "actor": self.user,
+                "table": table.name,
+                "parenttype": doctype.name,
+                "parent": name,
+                "parentfield": field.fieldname,
+            }
+            where = (
+                "t.parenttype = :parenttype AND t.parent = :parent AND t.parentfield = :parentfield"
+            )
+            self.conn.execute(
+                text(
+                    "INSERT INTO sys_archive (batch_id, actor, table_name, row_id, value) "
+                    f"SELECT :batch_id, :actor, :table, t.id, to_jsonb(t) FROM {quote(table.name)} "
+                    f"AS t WHERE {where}"
+                ),
+                params,
+            )
+            self.conn.execute(
+                text(f"DELETE FROM {quote(table.name)} AS t WHERE {where}"),
+                {k: v for k, v in params.items() if k in ("parenttype", "parent", "parentfield")},
+            )
+
     def _after(
         self, doctype: DocType, doc: Doc, names: tuple[str, ...], written: dict[str, Any]
     ) -> dict[str, Any]:
@@ -258,9 +425,9 @@ class Records:
         """
         hooks = self.hooks.get(doctype.name)
         if hooks is None:
-            return written
+            return self._with_children(doctype, written)
         run_hooks(hooks, names, doc)
-        return _public(self._fetch(doctype, str(doc.name)))
+        return self._with_children(doctype, _public(self._fetch(doctype, str(doc.name))))
 
     def _doc(
         self,
@@ -285,6 +452,14 @@ class Records:
         doctype = self.doctypes.get(name)
         if doctype is None:
             raise DocumentNotFound(f"no DocType named {name!r}")
+        if doctype.is_child and action is not None:
+            # Child rows are reached through the record that owns them, so that their
+            # permissions are the parent's and they can't be edited behind its back.
+            owners = sorted(dt.label for dt in self.doctypes.values() if name in dt.children())
+            inside = f" It's a table inside {' and '.join(owners)}." if owners else ""
+            raise DocumentNotFound(
+                f"{doctype.label} isn't a DocType you can use on its own.{inside}"
+            )
         if action is not None:
             self.permissions.require(name, action, doctype.label)
         return doctype
@@ -359,16 +534,21 @@ class Records:
 
 
 def _split(
-    doctype: DocType, data: Mapping[str, Any], *, keep: Collection[str] = ()
+    doctype: DocType,
+    data: Mapping[str, Any],
+    *,
+    keep: Collection[str] = (),
+    ignore: Collection[str] = (),
 ) -> tuple[dict[str, Any], Errors]:
     """Separate what a client may write from system columns (ignored) and unknown keys."""
     fieldnames = {f.fieldname for f in doctype.data_fields}
+    fieldnames |= {f.fieldname for f in doctype.table_fields}
     payload: dict[str, Any] = {}
     errors: Errors = []
     for key, value in data.items():
         if key in fieldnames or key == "name" or key in keep:
             payload[key] = value
-        elif key not in SYSTEM_COLUMNS:
+        elif key not in SYSTEM_COLUMNS and key not in ignore:
             errors.append({"field": key, "message": f"isn't a field of {doctype.label}"})
     return payload, errors
 

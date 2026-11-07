@@ -76,9 +76,13 @@ def delete_doctype(engine: Engine, name: str, *, actor: str = DEFAULT_ACTOR) -> 
         current = load_doctypes(conn)
         if name not in current:
             raise DocTypeError(f"DocType {name!r} doesn't exist")
-        linked_from = sorted(n for n, dt in current.items() if n != name and name in dt.links())
-        if linked_from:
-            raise DocTypeError(f"can't delete {name!r}: {', '.join(linked_from)} link to it")
+        users = sorted(
+            n
+            for n, dt in current.items()
+            if n != name and (name in dt.links() or name in dt.children())
+        )
+        if users:
+            raise DocTypeError(f"can't delete {name!r}: {', '.join(users)} use it")
         delete_definition(conn, name)
         del current[name]
         return sync_schema(conn, current.values(), actor=actor)
@@ -127,10 +131,25 @@ def install_app(
 
 
 def _check_links(doctype: DocType, known: Mapping[str, DocType]) -> None:
+    """Link and Table fields must point at a DocType that exists, and the right kind."""
     for f in doctype.fields:
-        if f.fieldtype == "Link" and f.options not in known:
+        if f.fieldtype not in ("Link", "Table"):
+            continue
+        target = known.get(f.options or "")
+        if target is None:
             raise DocTypeError(
-                f"{doctype.name}.{f.fieldname} links to unknown DocType {f.options!r}"
+                f"{doctype.name}.{f.fieldname} {'holds' if f.is_table else 'links to'} "
+                f"unknown DocType {f.options!r}"
+            )
+        if f.is_table and not target.is_child:
+            raise DocTypeError(
+                f"{doctype.name}.{f.fieldname} is a Table, so {f.options!r} must be a child "
+                'DocType — set "is_child": true on it'
+            )
+        if f.fieldtype == "Link" and target.is_child:
+            raise DocTypeError(
+                f"{doctype.name}.{f.fieldname} links to {f.options!r}, which is a child "
+                "DocType: its rows have no name to link to"
             )
 
 
