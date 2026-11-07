@@ -114,6 +114,82 @@ def test_records_crud_over_http(crm_client):
     assert crm_client.get("/api/resource/customer/CUST-0001").status_code == 404
 
 
+def test_builder_saves_a_doctype_and_returns_the_ddl(client, site):
+    client.headers[SITE_HEADER] = site.name
+    visit = {
+        "name": "visit",
+        "module": "Field Sales",
+        "fields": [
+            {"fieldname": "phone", "fieldtype": "Data"},
+            {"fieldname": "notes", "fieldtype": "Text"},
+        ],
+    }
+    created = client.put("/api/meta/doctype/visit", json={"doctype": visit, "create": True})
+    assert created.status_code == 200
+    assert created.json()["statements"][0].startswith("CREATE TABLE tab_visit")
+
+    again = client.put("/api/meta/doctype/visit", json={"doctype": visit, "create": True})
+    assert again.status_code == 409  # "create" never overwrites
+
+    visit["fields"][0]["fieldname"] = "mobile"
+    renamed = client.put(
+        "/api/meta/doctype/visit", json={"doctype": visit, "renames": {"phone": "mobile"}}
+    )
+    assert [s for s in renamed.json()["statements"]] == [
+        "ALTER TABLE tab_visit RENAME phone TO mobile"
+    ]
+
+    [listed] = client.get("/api/meta/doctypes").json()["doctypes"]
+    assert [f["fieldname"] for f in listed["fields"]] == ["mobile", "notes"]
+
+
+def test_builder_errors_point_at_the_field(client, site):
+    client.headers[SITE_HEADER] = site.name
+    bad = {
+        "name": "visit",
+        "fields": [
+            {"fieldname": "ok", "fieldtype": "Data"},
+            {"fieldname": "Bad Name", "fieldtype": "Data"},
+        ],
+    }
+    response = client.put("/api/meta/doctype/visit", json={"doctype": bad})
+    assert response.status_code == 422
+    [error] = response.json()["errors"]
+    assert error["loc"] == ["fields", 1]
+    assert error["message"].startswith("fieldname 'Bad Name' must start with a letter")
+
+    unknown_link = {
+        "name": "visit",
+        "fields": [{"fieldname": "c", "fieldtype": "Link", "options": "nothing"}],
+    }
+    response = client.put("/api/meta/doctype/visit", json={"doctype": unknown_link})
+    assert (response.status_code, response.json()["detail"]) == (
+        422,
+        "visit.c links to unknown DocType 'nothing'",
+    )
+
+
+def test_builder_refuses_changes_the_data_does_not_allow(crm_client):
+    crm_client.post("/api/resource/customer", json={"customer_name": "Acme"})
+    customer = crm_client.get("/api/meta/doctypes").json()["doctypes"][0]
+    fields = [
+        f | {"fieldtype": "Int"} if f["fieldname"] == "customer_name" else f
+        for f in customer["fields"]
+    ]
+    definition = {"name": "customer", "autoname": customer["autoname"], "fields": fields}
+    response = crm_client.put("/api/meta/doctype/customer", json={"doctype": definition})
+    assert response.status_code == 409  # 'Acme' isn't a number; nothing changed
+    assert "tab_customer" in response.json()["detail"]
+
+
+def test_builder_deletes_doctypes(crm_client):
+    assert crm_client.delete("/api/meta/doctype/nothing").status_code == 404
+    linked = crm_client.delete("/api/meta/doctype/customer")
+    assert linked.status_code == 409  # the invoice DocType links to it
+    deleted = crm_client.delete("/api/meta/doctype/invoice")
+    assert deleted.json()["statements"] == ["DROP TABLE tab_invoice"]
+
+
 def test_http_errors(crm_client):
     invalid = crm_client.post("/api/resource/customer", json={"credit_limit": "lots"})
     assert invalid.status_code == 422

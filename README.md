@@ -8,8 +8,9 @@ their types, and which ones are required. Dhancha creates and maintains the Post
 for it and serves a REST API for its records. Later milestones add the screens and a
 drag-and-drop builder, all driven by the same metadata.
 
-> **Status: M3 (desk) is done.** Every DocType gets list and form screens. There's no
-> drag-and-drop builder or login yet, so don't expose the server to the internet.
+> **Status: M4 (the builder) is done.** You can design a DocType by dragging fields, and
+> its Postgres table is created or altered when you save. There's no login yet, so don't
+> expose the server to the internet.
 
 ## How it works
 
@@ -67,6 +68,29 @@ cd desk
 npm install
 npm run dev                          # Desk on http://localhost:5173
 ```
+
+## Builder
+
+Open **http://localhost:5173/build**. No code, no restart: what you save becomes a real
+Postgres table straight away.
+
+- **App map:** every DocType, grouped by module, with an arrow for each Link field. Click
+  one to edit it.
+- **Form builder:** drag field types from the palette onto the form, or click to add. Drag
+  cards to reorder them or move them between columns. Sections and columns are the same
+  Section Break and Column Break the JSON uses.
+- **Properties:** label, fieldname, type, choices, link target, default, required, unique,
+  shown in list, and how records are named.
+- **Preview:** the real form, built from the unsaved draft, using the same component the
+  record screens use. Typing in it saves nothing.
+- **Honest about the database:** after saving, the banner lists the exact DDL that ran
+  (`ALTER TABLE tab_visit RENAME phone TO mobile`), or says the table already matched.
+  Renaming a field renames its column and keeps the data — the properties panel says so
+  before you save. A change the live data can't take (text that isn't a number) is refused,
+  and nothing is applied.
+
+Problems are caught in the browser first (duplicate fieldnames, a Select with no choices, a
+Link with no target), and anything the server rejects is marked on the field it belongs to.
 
 ## Desk
 
@@ -147,6 +171,15 @@ Every DocType gets the same five endpoints (the same URL shape as Frappe):
 | PUT | `/api/resource/{doctype}/{name}` | Update only the fields you send |
 | DELETE | `/api/resource/{doctype}/{name}` | Delete; the record is archived first |
 
+The metadata has its own endpoints, which is what the builder uses:
+
+| Method | URL | What it does |
+|---|---|---|
+| GET | `/api/meta/doctypes` | Every DocType, with the columns its table really has |
+| PUT | `/api/meta/doctype/{name}` | Create or update a DocType and sync its table; returns the DDL that ran. Body: `{"doctype": {…}, "renames": {"phone": "mobile"}, "create": false}` |
+| DELETE | `/api/meta/doctype/{name}` | Delete a DocType and drop its table |
+| GET | `/api/meta/schema-log` | Recent schema changes |
+
 Open **http://127.0.0.1:8000/docs** to try them in the browser.
 
 - **Validation comes from the fields**: types, required fields, lengths, Select choices, and
@@ -198,7 +231,7 @@ The desk's layout and value-conversion logic has unit tests too: `cd desk && npm
 | M1 | Metadata, 10 field types, schema sync engine + 4 guards | done |
 | M2 | Records REST API: validation from fields, naming series, link and edit-clash checks | done |
 | M3 | Desk: list and form screens drawn from metadata | done |
-| M4 | Drag-and-drop builder: app map, form builder, live preview | |
+| M4 | Drag-and-drop builder: app map, form builder, live preview | done |
 | M5 | Login, roles, permissions per DocType | |
 | M6 | Developer layer: DocTypes as JSON in git, `migrate`, Python hooks | |
 | M7 | First client app: child tables, naming series, print formats | |

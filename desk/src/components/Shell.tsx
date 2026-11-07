@@ -14,6 +14,9 @@ export function Shell() {
             site <code>{data.site}</code>
           </span>
         )}
+        <NavLink to="/build" className="top-link">
+          Builder
+        </NavLink>
         <a className="muted" href="/docs" target="_blank" rel="noreferrer">
           API docs
         </a>

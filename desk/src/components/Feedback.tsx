@@ -5,7 +5,7 @@ export function Banner({
   kind = "error",
   children,
 }: {
-  kind?: "error" | "warning";
+  kind?: "error" | "warning" | "success";
   children: ReactNode;
 }) {
   return (

@@ -12,14 +12,18 @@ from typing import Annotated, Any
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import inspect, select
 
 from . import __version__
 from .config import Settings
+from .doctypes import DocTypeError, delete_doctype, save_doctypes
 from .documents import DocumentConflict, DocumentNotFound, DocumentValidationError, Records
+from .meta import DocType
 from .query import MAX_LIMIT, QueryError
 from .sites import Site, SiteError, default_site_name, get_engine, load_site
 from .store import load_doctypes
+from .sync import SchemaSyncError
 from .system_tables import sys_schema_log
 
 SITE_HEADER = "X-Dhancha-Site"
@@ -28,7 +32,17 @@ ERROR_STATUS: dict[type[Exception], int] = {
     DocumentValidationError: 422,
     DocumentConflict: 409,
     QueryError: 400,
+    DocTypeError: 422,  # e.g. a Link to a DocType that doesn't exist, or a bad rename
+    SchemaSyncError: 409,  # the live data doesn't allow the change; nothing was applied
 }
+
+
+class DocTypeSave(BaseModel):
+    """What the builder sends when it saves a DocType."""
+
+    doctype: dict[str, Any]  # validated as a DocType in the route, to report errors per field
+    renames: dict[str, str] = {}  # old fieldname -> new, so renamed columns keep their data
+    create: bool = False  # refuse to overwrite a DocType that already exists
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -140,6 +154,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "module": dt.module,
                     "table": dt.table_name,
                     "autoname": dt.autoname,
+                    "description": dt.description,
                     "fields": [f.model_dump(exclude_defaults=True) for f in dt.fields],
                     "columns": [
                         {
@@ -174,6 +189,46 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 for r in rows
             ]
         return {"site": site.name, "entries": entries}
+
+    @app.put("/api/meta/doctype/{name}", response_model=None)
+    def save_doctype_route(name: str, site: CurrentSite, body: DocTypeSave) -> Any:
+        """Create or update a DocType and sync its table, returning the DDL that ran."""
+        try:
+            doctype = DocType.model_validate(body.doctype)
+        except ValidationError as e:
+            errors = [
+                {"loc": list(err["loc"]), "message": err["msg"].removeprefix("Value error, ")}
+                for err in e.errors()
+            ]
+            return JSONResponse(
+                status_code=422, content={"detail": "The DocType isn't valid", "errors": errors}
+            )
+        if doctype.name != name:
+            raise HTTPException(422, f"the URL says {name!r} but the DocType is {doctype.name!r}")
+        engine = get_engine(site, settings)
+        if body.create:
+            with engine.connect() as conn:
+                if name in load_doctypes(conn):
+                    raise HTTPException(409, f"a DocType named {name!r} already exists")
+        result = save_doctypes(engine, [doctype], renames={name: body.renames})
+        return {
+            "doctype": doctype.model_dump(mode="json", exclude_defaults=True),
+            "statements": result.statements,
+            "archived_rows": result.archived_rows,
+        }
+
+    @app.delete("/api/meta/doctype/{name}", response_model=None)
+    def delete_doctype_route(name: str, site: CurrentSite) -> Any:
+        """Delete a DocType and drop its table (its rows are archived first)."""
+        engine = get_engine(site, settings)
+        with engine.connect() as conn:
+            if name not in load_doctypes(conn):
+                raise HTTPException(404, f"no DocType named {name!r}")
+        try:
+            result = delete_doctype(engine, name)
+        except DocTypeError as e:  # other DocTypes link to it
+            return JSONResponse(status_code=409, content={"detail": str(e)})
+        return {"statements": result.statements, "archived_rows": result.archived_rows}
 
     return app
 

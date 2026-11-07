@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { StrictMode } from "react";
+import { lazy, StrictMode, Suspense, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { createBrowserRouter } from "react-router";
 import { RouterProvider } from "react-router/dom";
@@ -22,6 +22,15 @@ const queryClient = new QueryClient({
   },
 });
 
+// The builder carries the drag-and-drop and app-map libraries, so it loads only when
+// someone opens it: the everyday list and form screens stay small.
+const AppMap = lazy(() => import("./pages/AppMap").then((m) => ({ default: m.AppMap })));
+const BuilderPage = lazy(() => import("./pages/Builder").then((m) => ({ default: m.BuilderPage })));
+
+const whenLoaded = (page: ReactNode) => (
+  <Suspense fallback={<p className="muted">Loading…</p>}>{page}</Suspense>
+);
+
 const router = createBrowserRouter([
   {
     path: "/",
@@ -33,6 +42,9 @@ const router = createBrowserRouter([
       { path: "app/:doctype/new", element: <FormView /> },
       // The rest of the path is the record's name, which may contain slashes.
       { path: "app/:doctype/*", element: <FormView /> },
+      { path: "build", element: whenLoaded(<AppMap />) },
+      { path: "build/new", element: whenLoaded(<BuilderPage />) },
+      { path: "build/:doctype", element: whenLoaded(<BuilderPage />) },
       { path: "*", element: <NotFound what="This page" /> },
     ],
   },

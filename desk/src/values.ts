@@ -71,8 +71,13 @@ export function missingRequired(doctype: DocType, values: FormValues): Record<st
   return missing;
 }
 
-/** Some server messages start lowercase ("can't delete…"); banners show them as sentences. */
-export const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+/** Some server messages start lowercase ("can't delete…"); banners show them as sentences.
+ * A message starting with an identifier (tab_lead: …) is left as it is. */
+export function sentence(text: string): string {
+  const firstWord = text.split(/\s/, 1)[0];
+  if (/[_\d]/.test(firstWord)) return text;
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
 
 /** Server messages like "is required" are sentence ends; put the field's label in front. */
 export function fieldMessage(label: string, message: string): string {

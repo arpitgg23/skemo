@@ -39,6 +39,7 @@ export type DocType = {
   module: string;
   table: string;
   autoname: string;
+  description?: string | null;
   fields: Field[];
   columns: Column[]; // what the table really has in Postgres
 };
@@ -74,18 +75,34 @@ export type ListParams = {
   offset?: number;
 };
 
+/** A DocType as the API takes it when saving: no live columns, most properties optional. */
+export type DocTypeDefinition = {
+  name: string;
+  label?: string;
+  module?: string;
+  autoname?: string;
+  description?: string;
+  fields: Field[];
+};
+
+/** The DDL a save or delete ran, and how many values were archived before dropping. */
+export type SchemaChange = { statements: string[]; archived_rows: number };
+
 export class ApiError extends Error {
   readonly status: number;
   /** Per-field problems, sent with 422. */
   readonly errors: FieldError[];
   /** Why a 409 happened: "duplicate", "linked" or "stale". */
   readonly code?: string;
+  /** The whole error response, for callers that need more than the above. */
+  readonly body: unknown;
 
-  constructor(status: number, message: string, errors: FieldError[] = [], code?: string) {
+  constructor(status: number, message: string, errors: FieldError[] = [], code?: string, body?: unknown) {
     super(message);
     this.status = status;
     this.errors = errors;
     this.code = code;
+    this.body = body;
   }
 }
 
@@ -105,7 +122,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   if (!response.ok) {
     const detail =
       typeof payload?.detail === "string" ? payload.detail : `${response.status} ${response.statusText}`;
-    throw new ApiError(response.status, detail, payload?.errors ?? [], payload?.code);
+    throw new ApiError(response.status, detail, payload?.errors ?? [], payload?.code, payload);
   }
   return payload as T;
 }
@@ -141,4 +158,16 @@ export const api = {
   update: (doctype: string, name: string, values: Record<string, unknown>) =>
     request<{ data: Doc }>("PUT", resource(doctype, name), values).then((r) => r.data),
   remove: (doctype: string, name: string) => request<void>("DELETE", resource(doctype, name)),
+  /** Create or update a DocType; its table is synced in the same request. */
+  saveDocType: (
+    name: string,
+    body: { doctype: DocTypeDefinition; renames: Record<string, string>; create: boolean },
+  ) =>
+    request<SchemaChange & { doctype: DocTypeDefinition }>(
+      "PUT",
+      `/api/meta/doctype/${encodeURIComponent(name)}`,
+      body,
+    ),
+  deleteDocType: (name: string) =>
+    request<SchemaChange>("DELETE", `/api/meta/doctype/${encodeURIComponent(name)}`),
 };

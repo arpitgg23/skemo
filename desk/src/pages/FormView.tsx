@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useBlocker, useLocation, useNavigate, useParams } from "react-router";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { ApiError, api, type Doc, type DocType } from "../api";
 import { Banner, NotFound } from "../components/Feedback";
-import { FieldInput } from "../components/FieldInput";
-import { usePageTitle } from "../hooks";
-import { dataFields, docUrl, formLayout, titleField, useDocType } from "../meta";
+import { FormFields } from "../components/FormFields";
+import { usePageTitle, useSaveShortcut, useUnsavedChangesGuard } from "../hooks";
+import { dataFields, docUrl, titleField, useDocType } from "../meta";
 import {
   changedFields,
   type FormValues,
@@ -173,38 +173,8 @@ function DocForm({
     if (doc && window.confirm(`Delete ${doc.name}? A copy is kept in the archive.`)) remove.mutate();
   }
 
-  // Ctrl+S / Cmd+S saves.
-  const submitRef = useRef(submit);
-  useEffect(() => {
-    submitRef.current = submit;
-  });
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
-        event.preventDefault();
-        submitRef.current();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  // Ask before leaving with unsaved changes: in-app links, and closing or reloading the tab.
-  const blocker = useBlocker(
-    ({ currentLocation, nextLocation }) =>
-      dirty && !leaving.current && currentLocation.pathname !== nextLocation.pathname,
-  );
-  useEffect(() => {
-    if (blocker.state !== "blocked") return;
-    if (window.confirm("You have unsaved changes. Leave without saving?")) blocker.proceed();
-    else blocker.reset();
-  }, [blocker]);
-  useEffect(() => {
-    if (!dirty) return;
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
+  useSaveShortcut(submit);
+  useUnsavedChangesGuard(dirty, leaving);
 
   return (
     <div className="form-page">
@@ -288,26 +258,7 @@ function DocForm({
         </section>
       )}
 
-      {formLayout(doctype.fields).map((section, i) => (
-        <section className="form-section" key={i}>
-          {section.label && <h2>{section.label}</h2>}
-          <div className="form-columns" style={{ "--columns": section.columns.length } as CSSProperties}>
-            {section.columns.map((column, j) => (
-              <div key={j}>
-                {column.map((field) => (
-                  <FieldInput
-                    key={field.fieldname}
-                    field={field}
-                    value={values[field.fieldname]}
-                    error={errors[field.fieldname]}
-                    onChange={(value) => setValue(field.fieldname, value)}
-                  />
-                ))}
-              </div>
-            ))}
-          </div>
-        </section>
-      ))}
+      <FormFields fields={doctype.fields} values={values} errors={errors} onChange={setValue} />
 
       {doc && (
         <p className="form-meta muted">

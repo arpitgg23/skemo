@@ -120,9 +120,14 @@ function DocList({ doctype }: { doctype: DocType }) {
             </p>
           )}
         </div>
-        <Link className="button-link" to={newUrl}>
-          New {doctype.label}
-        </Link>
+        <div className="actions">
+          <Link className="muted" to={`/build/${doctype.name}`}>
+            Design this form
+          </Link>
+          <Link className="button-link" to={newUrl}>
+            New {doctype.label}
+          </Link>
+        </div>
       </div>
 
       <div className="toolbar">

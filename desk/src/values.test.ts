@@ -8,6 +8,7 @@ import {
   initialValues,
   missingRequired,
   parseApiDatetime,
+  sentence,
   timeAgo,
   toFormValue,
 } from "./values";
@@ -84,6 +85,15 @@ describe("fieldMessage", () => {
   it("puts the label in front of sentence endings only", () => {
     expect(fieldMessage("Lead Name", "is required")).toBe("Lead Name is required");
     expect(fieldMessage("Qty", "Input should be a valid integer")).toBe("Input should be a valid integer");
+  });
+});
+
+describe("sentence", () => {
+  it("capitalises prose but leaves identifiers alone", () => {
+    expect(sentence("can't delete Customer 'C-1'")).toBe("Can't delete Customer 'C-1'");
+    expect(sentence('tab_expense: invalid input syntax for type bigint: "CUST-1"')).toBe(
+      'tab_expense: invalid input syntax for type bigint: "CUST-1"',
+    );
   });
 });
 
