@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
-import { ApiError, api, type Doc, type DocType } from "../api";
+import { ApiError, api, printUrl, type Doc, type DocType } from "../api";
 import { Banner, NotFound } from "../components/Feedback";
 import { FormFields } from "../components/FormFields";
 import { usePageTitle, useSaveShortcut, useUnsavedChangesGuard } from "../hooks";
@@ -211,6 +211,17 @@ function DocForm({
           )}
           {doc && dirty && <span className="badge badge-warning">Not saved</span>}
           {!mayEdit && <span className="badge">Read only</span>}
+          {doc && (
+            <a
+              className="button-link secondary"
+              href={printUrl(doctype.name, doc.name)}
+              target="_blank"
+              rel="noreferrer"
+              title={dirty ? "Prints what's saved, not your unsaved changes" : undefined}
+            >
+              Print
+            </a>
+          )}
           {doc && allowed(doctype, "delete") && (
             <button type="button" className="danger" onClick={confirmDelete} disabled={remove.isPending}>
               Delete

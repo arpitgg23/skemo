@@ -1,0 +1,96 @@
+{# The app's own invoice, used instead of the default layout. Jinja, autoescaped. #}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Invoice {{ doc.name }}</title>
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; padding: 32px; background: #f4f4f2; color: #16160f;
+         font: 14px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .sheet { max-width: 760px; margin: 0 auto; padding: 44px; background: #fff;
+           border: 1px solid #e0e0d8; border-radius: 4px; }
+  header { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; }
+  h1 { margin: 0 0 2px; font-size: 24px; letter-spacing: -0.01em; }
+  .muted { color: #6b6b62; }
+  .meta { text-align: right; font-size: 13px; }
+  .status { display: inline-block; margin-top: 6px; padding: 2px 10px; border-radius: 999px;
+            background: #eeedfe; color: #3c3489; font-size: 12px; }
+  .status.paid { background: #eaf3de; color: #3b6d11; }
+  .bill-to { margin: 28px 0 8px; }
+  .bill-to span { display: block; font-size: 12px; letter-spacing: .06em;
+                  text-transform: uppercase; color: #6b6b62; }
+  table { width: 100%; margin-top: 16px; border-collapse: collapse; }
+  th, td { padding: 9px 10px; border-bottom: 1px solid #e0e0d8; text-align: left; }
+  th { font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: #6b6b62;
+       border-bottom: 2px solid #16160f; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .totals { width: 280px; margin-left: auto; margin-top: 18px; }
+  .totals td { border: none; padding: 4px 10px; }
+  .totals .grand td { padding-top: 10px; border-top: 2px solid #16160f;
+                      font-size: 16px; font-weight: 600; }
+  footer { margin-top: 36px; padding-top: 12px; border-top: 1px solid #e0e0d8;
+           color: #6b6b62; font-size: 12px; }
+  .print { position: fixed; top: 16px; right: 16px; padding: 8px 18px; border: 0;
+           border-radius: 8px; background: #534ab7; color: #fff; font: inherit; cursor: pointer; }
+  @media print {
+    body { padding: 0; background: #fff; }
+    .sheet { max-width: none; padding: 0; border: 0; }
+    .print { display: none; }
+  }
+</style>
+</head>
+<body>
+<button class="print" type="button" onclick="window.print()">Print</button>
+<div class="sheet">
+  <header>
+    <div>
+      <h1>Invoice</h1>
+      <div class="muted">{{ site }}</div>
+    </div>
+    <div class="meta">
+      <strong>{{ doc.name }}</strong><br>
+      <span class="muted">{{ doc.invoice_date | day }}</span><br>
+      <span class="status {{ 'paid' if doc.status == 'Paid' else '' }}">{{ doc.status }}</span>
+    </div>
+  </header>
+
+  <div class="bill-to">
+    <span>Billed to</span>
+    <strong>{{ doc.customer }}</strong>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>#</th><th>Item</th>
+        <th class="num">Qty</th><th class="num">Rate</th><th class="num">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in doc["items"] %}
+      <tr>
+        <td class="muted">{{ loop.index }}</td>
+        <td>{{ row.description }}</td>
+        <td class="num">{{ row.qty | number }}</td>
+        <td class="num">{{ row.rate | money }}</td>
+        <td class="num">{{ row.amount | money }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="muted">No items.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <table class="totals">
+    <tr><td>Subtotal</td><td class="num">{{ doc.subtotal | money }}</td></tr>
+    <tr><td>GST ({{ doc.gst_percent | number }}%)</td><td class="num">{{ doc.gst_amount | money }}</td></tr>
+    <tr class="grand"><td>Total</td><td class="num">₹ {{ doc.total | money }}</td></tr>
+  </table>
+
+  <footer>
+    {{ doc.name }} · raised by {{ doc.owner }} on {{ doc.created_at | moment }}
+  </footer>
+</div>
+</body>
+</html>

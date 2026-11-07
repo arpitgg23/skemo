@@ -34,6 +34,7 @@ from .system_tables import sys_app
 
 APP_FILE = "app.json"
 DOCTYPES_DIR = "doctypes"
+PRINT_FORMATS_DIR = "print_formats"
 APP_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
@@ -76,6 +77,11 @@ class App:
 
     def hooks_for(self, doctype: str) -> DocumentHooks | None:
         return load_hooks(self.doctypes_dir / f"{doctype}.py", doctype)
+
+    def print_format(self, doctype: str) -> Path | None:
+        """The app's own printable layout for a DocType, if it ships one."""
+        path = self.path / PRINT_FORMATS_DIR / f"{doctype}.html"
+        return path if path.is_file() else None
 
     def write_doctype(self, doctype: DocType) -> Path:
         """Write a DocType back to its file, for a developer to review and commit."""
@@ -173,6 +179,15 @@ def site_hooks(conn: Connection) -> dict[str, DocumentHooks]:
         if hooks is not None:
             found[doctype] = hooks
     return found
+
+
+def print_template(conn: Connection, doctype: str) -> tuple[str, str] | None:
+    """An installed app's print format for a DocType, as (template, where it came from)."""
+    for app in load_installed(conn):
+        path = app.print_format(doctype)
+        if path is not None:
+            return path.read_text(encoding="utf-8"), f"{app.name}/{PRINT_FORMATS_DIR}/{path.name}"
+    return None
 
 
 def app_of(conn: Connection, doctype: str, apps: list[App] | None = None) -> App | None:

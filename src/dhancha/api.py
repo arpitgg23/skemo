@@ -12,18 +12,19 @@ from contextlib import contextmanager
 from typing import Annotated, Any
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import inspect, select
 
 from . import __version__
-from .apps import AppError, app_of
+from .apps import AppError, app_of, print_template
 from .auth import AuthError, User, resolve_session, sign_in, sign_out
 from .config import Settings
 from .doctypes import DocTypeError, delete_doctype, save_doctypes
 from .documents import DocumentConflict, DocumentNotFound, DocumentValidationError, Records
 from .meta import DocType
 from .permissions import ACTIONS, PermissionDenied, Permissions
+from .printing import PrintError, render
 from .query import MAX_LIMIT, QueryError
 from .sites import Site, SiteError, default_site_name, get_engine, load_site
 from .store import app_owners, load_doctypes
@@ -42,6 +43,7 @@ ERROR_STATUS: dict[type[Exception], int] = {
     PermissionDenied: 403,
     AuthError: 401,
     AppError: 409,  # an app's folder has moved or has a file that isn't a valid DocType
+    PrintError: 422,  # the app's print format has a mistake in it
 }
 
 
@@ -195,6 +197,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with records(site, user) as r:
             r.delete(doctype, name)
         return Response(status_code=204)
+
+    @app.get("/api/print/{doctype}/{name:path}", response_class=HTMLResponse)
+    def print_record(doctype: str, name: str, site: CurrentSite, user: SignedIn) -> HTMLResponse:
+        """One record as a printable page: the app's own layout, or the default one."""
+        with records(site, user) as r:
+            record = r.get(doctype, name)  # checks read permission, and owner-only rules
+            definition = r.doctypes[doctype]
+            found = print_template(r.conn, doctype)
+        template, source = found or (None, "the print format")
+        return HTMLResponse(
+            render(definition, record, site=site.name, template=template, source=source)
+        )
 
     @app.get("/api/meta/doctypes")
     def doctypes(site: CurrentSite, user: SignedIn) -> dict[str, Any]:

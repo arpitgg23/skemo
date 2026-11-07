@@ -149,6 +149,10 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 /** Record names may contain slashes (INV/24-25/001); each part is encoded separately. */
 export const namePath = (name: string) => name.split("/").map(encodeURIComponent).join("/");
 
+/** The printable page for a record, opened in its own tab. */
+export const printUrl = (doctype: string, name: string) =>
+  `/api/print/${encodeURIComponent(doctype)}/${namePath(name)}`;
+
 const resource = (doctype: string, name?: string) =>
   `/api/resource/${encodeURIComponent(doctype)}${name === undefined ? "" : `/${namePath(name)}`}`;
 
