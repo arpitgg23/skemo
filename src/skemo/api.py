@@ -204,10 +204,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with records(site, user) as r:
             record = r.get(doctype, name)  # checks read permission, and owner-only rules
             definition = r.doctypes[doctype]
+            # Links store a name like CUST-00002; paper should say who that is.
+            titles = r.link_titles(definition, record)
             found = print_template(r.conn, doctype)
         template, source = found or (None, "the print format")
         return HTMLResponse(
-            render(definition, record, site=site.name, template=template, source=source)
+            render(
+                definition,
+                record,
+                site=site.name,
+                titles=titles,
+                template=template,
+                source=source,
+            )
         )
 
     @app.get("/api/meta/doctypes")

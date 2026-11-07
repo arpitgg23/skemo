@@ -70,4 +70,10 @@ describe("titleField", () => {
     expect(titleField(required)?.fieldname).toBe("customer_name");
     expect(titleField(doctype([field("qty", "Int")]))).toBeUndefined();
   });
+
+  it("skips hidden fields, like the server does", () => {
+    const hidden = doctype([field("secret", "Data", { hidden: true }), field("city")]);
+    expect(titleField(hidden)?.fieldname).toBe("city");
+    expect(titleField(doctype([field("secret", "Data", { hidden: true })]))).toBeUndefined();
+  });
 });

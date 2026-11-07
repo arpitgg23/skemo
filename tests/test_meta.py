@@ -100,3 +100,23 @@ def test_today_and_now_are_allowed_as_defaults():
 def test_duplicate_fieldnames_are_rejected():
     with pytest.raises(ValidationError, match="duplicate"):
         doctype("lead", field("phone"), field("phone", "Int"))
+
+
+def test_the_title_field_is_what_describes_a_record_in_words():
+    listed = doctype(
+        "deal",
+        field("amount", "Currency", in_list_view=True),
+        field("notes"),
+        field("deal_title", in_list_view=True),
+    )
+    assert listed.title_field.fieldname == "deal_title"  # a Data field, shown in the list
+
+    required = doctype("lead", field("notes"), field("lead_name", reqd=True))
+    assert required.title_field.fieldname == "lead_name"
+
+    first = doctype("lead", field("notes"), field("city"))
+    assert first.title_field.fieldname == "notes"
+
+    # Nothing to show: no plain text field, or the only one is hidden.
+    assert doctype("slot", field("hour", "Int")).title_field is None
+    assert doctype("token", field("secret", hidden=True)).title_field is None

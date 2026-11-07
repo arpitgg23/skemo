@@ -366,3 +366,16 @@ def test_http_errors(crm_client):
     assert (linked.status_code, linked.json()["code"]) == (409, "linked")
     assert crm_client.get("/api/resource/customer", params={"filters": "{oops"}).status_code == 400
     assert crm_client.get("/api/resource/nothing").status_code == 404
+
+
+def test_a_printed_page_names_the_record_a_link_points_at(crm_client):
+    crm_client.post("/api/resource/customer", json={"customer_name": "Asha Textiles"})
+    crm_client.post("/api/resource/invoice", json={"name": "INV-001", "customer": "CUST-0001"})
+
+    page = crm_client.get("/api/print/invoice/INV-001")
+
+    assert page.status_code == 200
+    assert "text/html" in page.headers["content-type"]
+    # The customer reads as a customer, not as the code the invoice links by.
+    assert "Asha Textiles" in page.text
+    assert "CUST-0001" not in page.text

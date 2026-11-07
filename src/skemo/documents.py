@@ -142,6 +142,88 @@ class Records:
         dt = self._doctype(doctype, "read")
         return self._with_children(dt, _public(self._fetch(dt, name)))
 
+    def link_titles(self, doctype: str | DocType, doc: Mapping[str, Any]) -> dict[str, Any]:
+        """The words behind a record's Link values: `{"customer": "Asha Textiles"}`.
+
+        A Link field stores the target's name, which is usually a code, so anything shown
+        to a person needs the target's title field as well. Grids come back in the same
+        shape the record has, one entry per row, so a caller can walk the two together:
+
+            {"customer": "Asha Textiles", "items": [{"product": "Cotton fabric"}, {}]}
+
+        One query per target DocType, however many values point at it. A link is simply
+        left out — and the caller falls back to the stored name — when the target has no
+        title field, when the record has gone, or when this user may not read that
+        DocType. Someone limited to their own records only gets titles for records they
+        own, the same answer `_fetch` gives them.
+        """
+        dt = doctype if isinstance(doctype, DocType) else self.doctypes[doctype]
+        wanted: dict[str, set[str]] = {}
+        for target, _, value in self._links(dt, doc):
+            wanted.setdefault(target, set()).add(value)
+        found = {target: self._titles(target, names) for target, names in wanted.items()}
+
+        def titles_of(fields: Sequence[DocField], values: Mapping[str, Any]) -> dict[str, str]:
+            return {
+                f.fieldname: title
+                for target, f, value in self._link_fields(fields, values)
+                if (title := found.get(target, {}).get(value)) and f.fieldname
+            }
+
+        titles: dict[str, Any] = titles_of(dt.data_fields, doc)
+        for field, child, rows in self._grids(dt, doc):
+            titles[field.fieldname] = [titles_of(child.data_fields, row) for row in rows]
+        return titles
+
+    def _links(
+        self, doctype: DocType, doc: Mapping[str, Any]
+    ) -> list[tuple[str, DocField, str]]:
+        """Every Link value in a record and its grids, as (target DocType, field, value)."""
+        links = list(self._link_fields(doctype.data_fields, doc))
+        for _, child, rows in self._grids(doctype, doc):
+            for row in rows:
+                links += self._link_fields(child.data_fields, row)
+        return links
+
+    @staticmethod
+    def _link_fields(
+        fields: Sequence[DocField], values: Mapping[str, Any]
+    ) -> list[tuple[str, DocField, str]]:
+        return [
+            (f.options, f, value)
+            for f in fields
+            if f.fieldtype == "Link"
+            and f.options
+            and isinstance(value := values.get(f.fieldname), str)
+            and value
+        ]
+
+    def _grids(
+        self, doctype: DocType, doc: Mapping[str, Any]
+    ) -> list[tuple[DocField, DocType, list[Mapping[str, Any]]]]:
+        """Each grid on the record, with its child DocType and the rows actually there."""
+        grids = []
+        for f in doctype.table_fields:
+            child = self.doctypes.get(f.options or "")
+            rows = doc.get(f.fieldname) or []
+            if child is not None and rows:
+                grids.append((f, child, list(rows)))
+        return grids
+
+    def _titles(self, doctype: str, names: Collection[str]) -> dict[str, str]:
+        """{record name: its title} for one DocType, in one query. Empty when not allowed."""
+        target = self.doctypes.get(doctype)
+        if target is None or not self.permissions.can(doctype, "read"):
+            return {}
+        title = target.title_field
+        if title is None or title.fieldname is None:
+            return {}
+        table = self._table(target)
+        query = select(table.c.name, table.c[title.fieldname]).where(table.c.name.in_(names))
+        if self.permissions.owner_only(doctype, "read"):
+            query = query.where(table.c.owner == self.user)
+        return {name: text for name, text in self.conn.execute(query) if text}
+
     def update(self, doctype: str, name: str, data: Mapping[str, Any]) -> dict[str, Any]:
         """Change some fields of a record and return it as stored.
 

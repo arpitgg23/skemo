@@ -55,9 +55,11 @@ export function listFields(doctype: DocType): DataField[] {
   return marked.length ? marked : fields.slice(0, 4);
 }
 
-/** The field that describes a record in words, like customer_name, for search and links. */
+/** The field that describes a record in words, like customer_name, for search and links.
+ * The server follows the same rule in DocType.title_field (src/skemo/meta.py), which is
+ * what printed pages use, so a link reads the same on screen and on paper. */
 export function titleField(doctype: DocType): DataField | undefined {
-  const text = dataFields(doctype).filter((f) => f.fieldtype === "Data");
+  const text = dataFields(doctype).filter((f) => f.fieldtype === "Data" && !f.hidden);
   return text.find((f) => f.in_list_view) ?? text.find((f) => f.reqd) ?? text[0];
 }
 

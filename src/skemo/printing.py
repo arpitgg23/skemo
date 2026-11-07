@@ -10,6 +10,11 @@ the form's own sections, columns and grids. An app can ship its own instead, as
     {% endfor %}
 
 Templates are autoescaped, so a customer's name with an angle bracket in it stays text.
+
+A Link field stores the target's name, which is usually a code. `{{ doc.customer }}` is
+that code; `{{ show("customer") }}` is the customer's title ("Asha Textiles"), falling back
+to the code when there isn't one. The default layout uses the title everywhere, so a
+DocType with no template of its own reads properly without anyone doing anything.
 """
 
 from __future__ import annotations
@@ -84,6 +89,8 @@ def format_value(field: DocField | None, value: Any) -> str:
     if value is None or value == "":
         return ""
     match field.fieldtype if field else "":
+        case "Table":
+            return ""  # a grid isn't one value; it prints as a table of its own
         case "Currency":
             return money(value)
         case "Float" | "Int":
@@ -98,6 +105,11 @@ def format_value(field: DocField | None, value: Any) -> str:
             return str(value)
 
 
+def shown_value(field: DocField | None, value: Any, title: Any = None) -> str:
+    """A value as it reads on paper: a Link shows the record's title, not its name."""
+    return title if isinstance(title, str) and title else format_value(field, value)
+
+
 def environment() -> Environment:
     """Jinja, sandboxed and autoescaped: an app's template can't reach into the process."""
     env = SandboxedEnvironment(autoescape=True, undefined=StrictUndefined, trim_blocks=True)
@@ -110,19 +122,28 @@ def render(
     doc: Mapping[str, Any],
     *,
     site: str,
+    titles: Mapping[str, Any] | None = None,
     template: str | None = None,
     source: str = "the print format",
 ) -> str:
-    """The printable page for one record, from the app's template or the default layout."""
+    """The printable page for one record, from the app's template or the default layout.
+
+    `titles` is what `Records.link_titles` returns: the words behind each Link value, in
+    the same shape as the record. Left out, every Link simply prints the name it stores.
+    """
     env = environment()
+    titles = titles or {}
     try:
         page = env.from_string(template if template is not None else DEFAULT_TEMPLATE)
         return page.render(
             doc=doc,
             doctype=doctype,
             site=site,
-            sections=_sections(doctype, doc),
-            show=lambda fieldname: format_value(_field(doctype, fieldname), doc.get(fieldname)),
+            titles=titles,
+            sections=_sections(doctype, doc, titles),
+            show=lambda fieldname: shown_value(
+                _field(doctype, fieldname), doc.get(fieldname), titles.get(fieldname)
+            ),
         )
     except TemplateError as e:
         line = f" (line {e.lineno})" if getattr(e, "lineno", None) else ""
@@ -133,7 +154,9 @@ def _field(doctype: DocType, fieldname: str) -> DocField | None:
     return next((f for f in doctype.fields if f.fieldname == fieldname), None)
 
 
-def _sections(doctype: DocType, doc: Mapping[str, Any]) -> list[dict[str, Any]]:
+def _sections(
+    doctype: DocType, doc: Mapping[str, Any], titles: Mapping[str, Any]
+) -> list[dict[str, Any]]:
     """The form's own layout, with each value formatted and empty parts left out."""
     sections: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
@@ -150,9 +173,9 @@ def _sections(doctype: DocType, doc: Mapping[str, Any]) -> list[dict[str, Any]]:
         if field.is_table:
             rows = doc.get(field.fieldname) or []
             if rows:
-                current["entries"].append(_grid(field, rows))
+                current["entries"].append(_grid(field, rows, titles.get(field.fieldname)))
             continue
-        shown = format_value(field, doc.get(field.fieldname))
+        shown = shown_value(field, doc.get(field.fieldname), titles.get(field.fieldname))
         if shown:
             current["entries"].append(
                 {"kind": "value", "label": field.label or field.fieldname, "value": shown}
@@ -160,17 +183,32 @@ def _sections(doctype: DocType, doc: Mapping[str, Any]) -> list[dict[str, Any]]:
     return [s for s in sections if s["entries"]]
 
 
-def _grid(field: DocField, rows: list[Mapping[str, Any]]) -> dict[str, Any]:
-    """A child table as a printable table: columns from the first row's keys, in order."""
+def _grid(field: DocField, rows: list[Mapping[str, Any]], titles: Any = None) -> dict[str, Any]:
+    """A child table as a printable table: columns from the first row's keys, in order.
+
+    `titles` is one entry per row, as `Records.link_titles` builds it, so a row's Link
+    cells read as the linked record's title.
+    """
     columns = list(rows[0].keys())
+    per_row = titles if isinstance(titles, list) else []
     return {
         "kind": "grid",
         "label": field.label or field.fieldname,
         "columns": [c.replace("_", " ").title() for c in columns],
         "rows": [
-            [format_value(None, row.get(c)) or _plain(row.get(c)) for c in columns] for row in rows
+            [_cell(row.get(c), _row_titles(per_row, i).get(c)) for c in columns]
+            for i, row in enumerate(rows)
         ],
     }
+
+
+def _row_titles(per_row: list[Any], index: int) -> Mapping[str, Any]:
+    found = per_row[index] if index < len(per_row) else None
+    return found if isinstance(found, Mapping) else {}
+
+
+def _cell(value: Any, title: Any = None) -> str:
+    return shown_value(None, value, title) or _plain(value)
 
 
 def _plain(value: Any) -> str:

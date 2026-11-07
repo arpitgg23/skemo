@@ -57,7 +57,9 @@
 
   <div class="bill-to">
     <span>Billed to</span>
-    <strong>{{ doc.customer }}</strong>
+    {# show() gives the customer's name; doc.customer is the code it links by. #}
+    <strong>{{ show("customer") }}</strong>
+    <span class="muted">{{ doc.customer }}</span>
   </div>
 
   <table>

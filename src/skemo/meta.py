@@ -194,6 +194,20 @@ class DocType(BaseModel):
         """The grids on this DocType, each holding rows of a child DocType."""
         return [f for f in self.fields if f.is_table]
 
+    @property
+    def title_field(self) -> DocField | None:
+        """The field that says in words which record this is, like customer_name.
+
+        A record's name is often a code (CUST-00002), so anything showing it to a person —
+        a printed invoice, a link box — reads this field instead. The desk follows the same
+        rule (desk/src/meta.ts `titleField`): the first visible Data field marked for the
+        list view, else the first required one, else the first. None when the DocType has
+        no plain text field, and then a record is only ever known by its name.
+        """
+        text = [f for f in self.data_fields if f.fieldtype == "Data" and not f.hidden]
+        marked = next((f for f in text if f.in_list_view), None)
+        return marked or next((f for f in text if f.reqd), None) or (text[0] if text else None)
+
     def links(self) -> set[str]:
         """Names of the DocTypes this one links to."""
         return {f.options for f in self.fields if f.fieldtype == "Link" and f.options}
