@@ -215,9 +215,7 @@ def _grid(
         "kind": "grid",
         "label": field.label or field.fieldname,
         "columns": [_heading(fields.get(c), c) for c in columns],
-        "rows": [
-            [_cell(fields.get(c), row.get(c), titles) for c in columns] for row in rows
-        ],
+        "rows": [[_cell(fields.get(c), row.get(c), titles) for c in columns] for row in rows],
     }
 
 

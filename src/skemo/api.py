@@ -209,9 +209,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # Links store a name like CUST-00002; paper should say who that is.
             titles = r.link_titles(definition, record)
             children = {
-                name: r.doctypes[name]
-                for name in definition.children()
-                if name in r.doctypes
+                name: r.doctypes[name] for name in definition.children() if name in r.doctypes
             }
             found = print_template(r.conn, doctype)
         template, source = found or (None, "the print format")

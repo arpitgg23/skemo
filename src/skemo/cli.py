@@ -54,9 +54,7 @@ ConfirmOption = Annotated[bool, typer.Option("--yes", help="Confirm the destruct
 def main(
     sites_dir: Annotated[
         Path | None,
-        typer.Option(
-            help="Folder holding the sites (default: ./sites).", envvar="SKEMO_SITES_DIR"
-        ),
+        typer.Option(help="Folder holding the sites (default: ./sites).", envvar="SKEMO_SITES_DIR"),
     ] = None,
 ) -> None:
     if sites_dir is not None:

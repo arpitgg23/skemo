@@ -202,8 +202,7 @@ def test_a_template_gets_the_title_and_the_code():
         site="demo.localhost",
         titles=ORDER_TITLES,
         template=(
-            "{{ show('customer') }} / {{ doc.customer }} / "
-            "{{ titles['customer'][doc.customer] }}"
+            "{{ show('customer') }} / {{ doc.customer }} / {{ titles['customer'][doc.customer] }}"
         ),
     )
     assert page == "Asha Textiles / CUST-00002 / Asha Textiles"
