@@ -216,6 +216,7 @@ def test_records_crud_over_http(crm_client):
     assert listed.json() == {
         "data": [{"name": "CUST-0001", "customer_name": "Acme", "credit_limit": 75000.5}],
         "total": 1,
+        "titles": {},  # Customer links to nothing, so there's nothing to look up
     }
 
     assert crm_client.delete("/api/resource/customer/CUST-0001").status_code == 204
@@ -379,3 +380,17 @@ def test_a_printed_page_names_the_record_a_link_points_at(crm_client):
     # The customer reads as a customer, not as the code the invoice links by.
     assert "Asha Textiles" in page.text
     assert "CUST-0001" not in page.text
+
+
+def test_a_list_page_carries_the_titles_behind_its_link_columns(crm_client):
+    crm_client.post("/api/resource/customer", json={"customer_name": "Asha Textiles"})
+    for n in (1, 2):
+        crm_client.post(
+            "/api/resource/invoice", json={"name": f"INV-00{n}", "customer": "CUST-0001"}
+        )
+
+    page = crm_client.get("/api/resource/invoice", params={"fields": "customer"}).json()
+
+    assert {row["customer"] for row in page["data"]} == {"CUST-0001"}
+    # One lookup for the page, keyed by DocType and name, however many rows share it.
+    assert page["titles"] == {"customer": {"CUST-0001": "Asha Textiles"}}

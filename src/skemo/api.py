@@ -161,7 +161,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         """List records. `fields`: comma-separated names or *; `filters` and `or_filters`: JSON
         (see query.py); `order_by`: e.g. "amount desc"."""
         with records(site, user) as r:
-            return r.list(
+            found = r.list(
                 doctype,
                 fields=_parse_fields(fields),
                 filters=_parse_json(filters, "filters"),
@@ -170,6 +170,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 limit=limit,
                 offset=offset,
             )
+            # The whole page's Link titles cost one query per target DocType.
+            return {**found, "titles": r.link_titles(doctype, found["data"])}
 
     @app.post("/api/resource/{doctype}", status_code=201, response_model=None)
     def create_record(

@@ -1,4 +1,4 @@
-import type { DataField, Doc, DocType } from "./api";
+import type { DataField, Doc, DocType, LinkTitles } from "./api";
 import { dataFields, isGrid } from "./meta";
 
 /** One row of a child table, as its inputs hold it. */
@@ -174,9 +174,18 @@ const moment = new Intl.DateTimeFormat("en-IN", {
   minute: "2-digit",
 });
 
-/** A value as shown in a list cell. */
-export function formatValue(field: DataField | undefined, value: unknown): string {
+/** A value as shown in a list cell. A Link reads as the record it points at, given the
+ * titles the server sent with the page; without one it shows the code it stores. */
+export function formatValue(
+  field: DataField | undefined,
+  value: unknown,
+  titles?: LinkTitles,
+): string {
   if (value === null || value === undefined || value === "") return "";
+  if (field?.fieldtype === "Link" && field.options) {
+    const title = titles?.[field.options]?.[String(value)];
+    if (title) return title;
+  }
   switch (field?.fieldtype) {
     case "Check":
       return value ? "Yes" : "No";

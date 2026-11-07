@@ -105,6 +105,16 @@ describe("formatValue", () => {
     expect(formatValue(field("vip", "Check"), true)).toBe("Yes");
     expect(formatValue(field("note"), null)).toBe("");
   });
+
+  it("shows a Link as the record it points at, or the code when there's no title", () => {
+    const customer = field("customer", "Link", { options: "customer" });
+    const titles = { customer: { "CUST-00002": "Asha Textiles" } };
+    expect(formatValue(customer, "CUST-00002", titles)).toBe("Asha Textiles");
+    expect(formatValue(customer, "CUST-00404", titles)).toBe("CUST-00404"); // no title for it
+    expect(formatValue(customer, "CUST-00002")).toBe("CUST-00002"); // none sent at all
+    // A title for another DocType's record of the same name doesn't bleed across.
+    expect(formatValue(customer, "P-1", { product: { "P-1": "Cotton fabric" } })).toBe("P-1");
+  });
 });
 
 describe("timeAgo", () => {

@@ -178,6 +178,9 @@ function listQuery(params: ListParams): string {
 
 type DocResponse = { data: Doc; titles?: LinkTitles };
 
+/** A page of records, with the titles behind the codes their Link fields store. */
+type ListResult = { data: Doc[]; total: number; titles?: LinkTitles };
+
 const loaded = (response: DocResponse): LoadedDoc => ({
   doc: response.data,
   titles: response.titles ?? {},
@@ -193,7 +196,10 @@ export const api = {
   schemaLog: (limit = 20) =>
     request<{ site: string; entries: LogEntry[] }>("GET", `/api/meta/schema-log?limit=${limit}`),
   list: (doctype: string, params: ListParams = {}) =>
-    request<{ data: Doc[]; total: number }>("GET", `${resource(doctype)}?${listQuery(params)}`),
+    request<ListResult>("GET", `${resource(doctype)}?${listQuery(params)}`).then((page) => ({
+      ...page,
+      titles: page.titles ?? {},
+    })),
   get: (doctype: string, name: string) =>
     request<DocResponse>("GET", resource(doctype, name)).then(loaded),
   create: (doctype: string, values: Record<string, unknown>) =>

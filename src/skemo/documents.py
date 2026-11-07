@@ -142,11 +142,18 @@ class Records:
         dt = self._doctype(doctype, "read")
         return self._with_children(dt, _public(self._fetch(dt, name)))
 
-    def link_titles(self, doctype: str | DocType, doc: Mapping[str, Any]) -> dict[str, Any]:
-        """The words behind a record's Link values, by target DocType and record name:
+    def link_titles(
+        self,
+        doctype: str | DocType,
+        docs: Mapping[str, Any] | Sequence[Mapping[str, Any]],
+    ) -> dict[str, Any]:
+        """The words behind Link values, by target DocType and record name:
 
             {"customer": {"CUST-00002": "Asha Textiles"},
              "product": {"P-1": "Cotton fabric"}}
+
+        Takes one record or a page of them — a list of records costs the same one query
+        per target DocType as a single record does.
 
         A Link field stores the target's name, which is usually a code, so anything shown
         to a person needs the target's title field as well. Grid rows are included, and
@@ -161,9 +168,11 @@ class Records:
         own, the same answer `_fetch` gives them.
         """
         dt = doctype if isinstance(doctype, DocType) else self.doctypes[doctype]
+        records = [docs] if isinstance(docs, Mapping) else docs
         wanted: dict[str, set[str]] = {}
-        for target, value in self._links(dt, doc):
-            wanted.setdefault(target, set()).add(value)
+        for record in records:
+            for target, value in self._links(dt, record):
+                wanted.setdefault(target, set()).add(value)
         found = {target: self._titles(target, names) for target, names in wanted.items()}
         return {target: titles for target, titles in found.items() if titles}
 

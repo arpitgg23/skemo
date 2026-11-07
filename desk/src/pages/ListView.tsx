@@ -217,7 +217,7 @@ function DocList({ doctype }: { doctype: DocType }) {
                   </td>
                   {columns.map((f) => (
                     <td key={f.fieldname} className={NUMERIC.has(f.fieldtype) ? "num" : undefined}>
-                      {formatValue(f, doc[f.fieldname])}
+                      {formatValue(f, doc[f.fieldname], data.titles)}
                     </td>
                   ))}
                   <td className="muted">{timeAgo(doc.modified_at)}</td>
