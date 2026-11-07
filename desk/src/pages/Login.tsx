@@ -29,7 +29,7 @@ export function Login() {
     <div className="login">
       <form className="panel" onSubmit={submit}>
         <h1>
-          Dhancha <span className="muted">desk</span>
+          Skemo <span className="muted">desk</span>
         </h1>
         {signIn.error && <Banner>{signIn.error.message}</Banner>}
         <div className="field">

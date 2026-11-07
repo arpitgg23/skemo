@@ -13,7 +13,7 @@ export function useDebounced<T>(value: T, delay: number): T {
 
 export function usePageTitle(title: string) {
   useEffect(() => {
-    document.title = `${title} · Dhancha`;
+    document.title = `${title} · Skemo`;
   }, [title]);
 }
 

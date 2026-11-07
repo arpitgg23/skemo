@@ -3,7 +3,7 @@
 Next to a DocType's JSON, an app can put a module with a class:
 
     # doctypes/deal.py
-    from dhancha.hooks import DocumentHooks, ValidationError
+    from skemo.hooks import DocumentHooks, ValidationError
 
     class Deal(DocumentHooks):
         def validate(self, doc):
@@ -157,7 +157,7 @@ def load_hooks(path: Path, doctype: str) -> DocumentHooks | None:
 
 
 def _import_hooks(path: Path, doctype: str) -> DocumentHooks | None:
-    module_name = f"dhancha_hooks.{path.parent.parent.name}.{doctype}"
+    module_name = f"skemo_hooks.{path.parent.parent.name}.{doctype}"
     spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
         return None

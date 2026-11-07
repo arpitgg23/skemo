@@ -18,7 +18,7 @@ class Settings:
     # How long a session cookie lasts while it keeps being used.
     session_days: int = 14
     # Send the session cookie only over HTTPS. Off by default so http://localhost works;
-    # set DHANCHA_COOKIE_SECURE=1 anywhere the site is served over HTTPS.
+    # set SKEMO_COOKIE_SECURE=1 anywhere the site is served over HTTPS.
     cookie_secure: bool = False
     # On: the builder may edit a DocType that belongs to an app, and writes the JSON back
     # to the app's folder for you to commit. Off: those DocTypes are read-only in the
@@ -28,9 +28,9 @@ class Settings:
     @classmethod
     def from_env(cls) -> Settings:
         return cls(
-            db_url=os.environ.get("DHANCHA_DB_URL", DEFAULT_DB_URL),
-            sites_dir=Path(os.environ.get("DHANCHA_SITES_DIR", "sites")).resolve(),
-            session_days=int(os.environ.get("DHANCHA_SESSION_DAYS", "14")),
-            cookie_secure=os.environ.get("DHANCHA_COOKIE_SECURE", "") not in ("", "0", "false"),
-            developer_mode=os.environ.get("DHANCHA_DEVELOPER_MODE", "") not in ("", "0", "false"),
+            db_url=os.environ.get("SKEMO_DB_URL", DEFAULT_DB_URL),
+            sites_dir=Path(os.environ.get("SKEMO_SITES_DIR", "sites")).resolve(),
+            session_days=int(os.environ.get("SKEMO_SESSION_DAYS", "14")),
+            cookie_secure=os.environ.get("SKEMO_COOKIE_SECURE", "") not in ("", "0", "false"),
+            developer_mode=os.environ.get("SKEMO_DEVELOPER_MODE", "") not in ("", "0", "false"),
         )

@@ -37,7 +37,7 @@ SYSTEM_COLUMNS = ("owner", "created_at", "modified_at", "modified_by")
 # A child row carries which record it belongs to; a client never sets these.
 CHILD_COLUMNS = ("parent", "parenttype", "parentfield", "idx")
 
-# Re-exported so `from dhancha.documents import DocumentNotFound` still works.
+# Re-exported so `from skemo.documents import DocumentNotFound` still works.
 __all__ = [
     "DEFAULT_USER",
     "DocumentConflict",

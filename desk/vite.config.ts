@@ -1,7 +1,7 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-// The API runs separately (`dhancha serve`); the desk reaches it through this proxy.
+// The API runs separately (`skemo serve`); the desk reaches it through this proxy.
 const api = "http://127.0.0.1:8000";
 
 export default defineConfig({

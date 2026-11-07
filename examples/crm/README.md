@@ -1,6 +1,6 @@
-# CRM — an example Dhancha app
+# CRM — an example Skemo app
 
-A small app showing the layout every Dhancha app uses:
+A small app showing the layout every Skemo app uses:
 
 ```
 crm/
@@ -15,10 +15,10 @@ crm/
 Install it on a site and apply its DocTypes:
 
 ```bash
-dhancha install-app examples/crm
+skemo install-app examples/crm
 ```
 
-After that, editing a JSON file and running `dhancha migrate` applies the change to every
+After that, editing a JSON file and running `skemo migrate` applies the change to every
 site that has the app — that's how a change travels from your laptop to a customer's site.
 
 `deal.py` shows the three things hooks are for:

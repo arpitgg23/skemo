@@ -6,9 +6,9 @@ import pytest
 from factories import RecordsClient, columns, doctype, field, rows
 from pydantic import ValidationError
 
-from dhancha.doctypes import DocTypeError, delete_doctype, save_doctypes
-from dhancha.documents import DocumentNotFound, DocumentValidationError
-from dhancha.meta import DocField, DocType
+from skemo.doctypes import DocTypeError, delete_doctype, save_doctypes
+from skemo.documents import DocumentNotFound, DocumentValidationError
+from skemo.meta import DocField, DocType
 
 
 @pytest.fixture
@@ -210,7 +210,7 @@ def test_a_table_field_needs_a_child_doctype_in_options():
 
 
 HOOK = """
-from dhancha.hooks import DocumentHooks
+from skemo.hooks import DocumentHooks
 
 
 class Invoice(DocumentHooks):
@@ -221,14 +221,14 @@ class Invoice(DocumentHooks):
 
 def test_a_hook_can_add_up_the_rows(engine, billing, tmp_path):
     """The reason child tables exist: a total computed from the lines."""
-    from dhancha.doctypes import install_app
+    from skemo.doctypes import install_app
 
     folder = tmp_path / "billing"
     (folder / "doctypes").mkdir(parents=True)
     (folder / "app.json").write_text('{"name": "billing"}')
     # The app ships the invoice, so its hook file is picked up.
     with engine.connect() as conn:
-        from dhancha.store import load_doctypes
+        from skemo.store import load_doctypes
 
         invoice = load_doctypes(conn)["invoice"]
     (folder / "doctypes" / "invoice.json").write_text(

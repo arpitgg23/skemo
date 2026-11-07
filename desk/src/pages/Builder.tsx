@@ -265,8 +265,8 @@ function DocTypeBuilder({ doctype }: { doctype?: DocType }) {
         <Banner kind="warning">
           {draft.label || draft.name} comes from the app <code>{fromApp}</code>, so its file is
           the truth. Edit <code>{`${fromApp}/doctypes/${draft.name}.json`}</code> and run{" "}
-          <code>dhancha migrate</code>, or start the server with{" "}
-          <code>DHANCHA_DEVELOPER_MODE=1</code> to edit it here and write the file. You can
+          <code>skemo migrate</code>, or start the server with{" "}
+          <code>SKEMO_DEVELOPER_MODE=1</code> to edit it here and write the file. You can
           still look around and use Preview.
         </Banner>
       )}

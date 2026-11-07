@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy import insert, select, update
 
-from dhancha.auth import (
+from skemo.auth import (
     ADMIN,
     AuthError,
     create_user,
@@ -21,8 +21,8 @@ from dhancha.auth import (
     sign_out,
     verify_password,
 )
-from dhancha.permissions import SYSTEM_MANAGER, install_roles
-from dhancha.system_tables import sys_role, sys_session, sys_user
+from skemo.permissions import SYSTEM_MANAGER, install_roles
+from skemo.system_tables import sys_role, sys_session, sys_user
 
 
 @pytest.fixture
@@ -135,7 +135,7 @@ def test_roles(conn):
 
 
 def test_a_new_site_has_an_administrator(settings, site_name):
-    from dhancha.sites import drop_site, get_engine, new_site
+    from skemo.sites import drop_site, get_engine, new_site
 
     site = new_site(site_name, settings, admin_password="site admin pass")
     try:

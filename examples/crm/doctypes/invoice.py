@@ -6,7 +6,7 @@ the amounts are never typed by hand, so they can't disagree with each other.
 
 from decimal import ROUND_HALF_UP, Decimal
 
-from dhancha.hooks import DocumentHooks, ValidationError
+from skemo.hooks import DocumentHooks, ValidationError
 
 PAISE = Decimal("0.01")
 

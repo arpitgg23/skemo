@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "dhancha"
+name = "skemo"
 version = "0.1.0"
 description = "Build ERPs and CRMs from metadata: describe a form, get its Postgres table, API and screens."
 readme = "README.md"
@@ -29,10 +29,10 @@ dev = [
 ]
 
 [project.scripts]
-dhancha = "dhancha.cli:app"
+skemo = "skemo.cli:app"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/dhancha"]
+packages = ["src/skemo"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

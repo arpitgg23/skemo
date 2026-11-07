@@ -5,10 +5,10 @@ An app is a folder:
     crm/
       app.json            {"name": "crm", "title": "CRM", "version": "0.1.0"}
       doctypes/
-        lead.json         the DocType, exactly as `dhancha save-doctype` takes it
+        lead.json         the DocType, exactly as `skemo save-doctype` takes it
         lead.py           optional Python hooks (see hooks.py)
 
-`dhancha install-app ./crm` records it on a site; `dhancha migrate` re-reads every
+`skemo install-app ./crm` records it on a site; `skemo migrate` re-reads every
 installed app and syncs the tables. A DocType from an app is "standard": the file is the
 truth, and the builder won't let it be edited in the browser unless developer mode is on —
 in which case saving writes the JSON back to the file for you to commit.
@@ -160,7 +160,7 @@ def load_installed(conn: Connection) -> list[App]:
         if installed.missing:
             raise AppError(
                 f"app {installed.name!r} isn't at {installed.path} any more. Move it back, "
-                f"or point the site at its new place: dhancha install-app <path>"
+                f"or point the site at its new place: skemo install-app <path>"
             )
         apps.append(load_app(installed.path))
     return apps

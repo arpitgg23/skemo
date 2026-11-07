@@ -6,10 +6,10 @@ from pathlib import Path
 import pytest
 from factories import RecordsClient, columns, has_table
 
-from dhancha.apps import AppError, app_of, installed_apps, load_app, site_hooks
-from dhancha.doctypes import install_app, sync_site
-from dhancha.documents import DocumentValidationError
-from dhancha.store import app_owners, load_doctypes
+from skemo.apps import AppError, app_of, installed_apps, load_app, site_hooks
+from skemo.doctypes import install_app, sync_site
+from skemo.documents import DocumentValidationError
+from skemo.store import app_owners, load_doctypes
 
 EXAMPLE_CRM = Path(__file__).parent.parent / "examples" / "crm"
 
@@ -24,7 +24,7 @@ VISIT = {
 }
 
 HOOKS = """
-from dhancha.hooks import DocumentHooks, ValidationError
+from skemo.hooks import DocumentHooks, ValidationError
 
 
 class Visit(DocumentHooks):

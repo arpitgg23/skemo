@@ -41,11 +41,11 @@ from .store import app_owners, load_doctypes, save_definition
 from .sync import SchemaSyncError, SyncResult
 from .system_tables import sys_permission, sys_role, sys_schema_log, sys_user
 
-app = typer.Typer(help="Dhancha: build ERPs and CRMs from metadata.", no_args_is_help=True)
+app = typer.Typer(help="Skemo: build ERPs and CRMs from metadata.", no_args_is_help=True)
 
 SiteOption = Annotated[
     str | None,
-    typer.Option("--site", "-s", help="Site to use (default: the one set with `dhancha use`)."),
+    typer.Option("--site", "-s", help="Site to use (default: the one set with `skemo use`)."),
 ]
 ConfirmOption = Annotated[bool, typer.Option("--yes", help="Confirm the destructive action.")]
 
@@ -55,13 +55,13 @@ def main(
     sites_dir: Annotated[
         Path | None,
         typer.Option(
-            help="Folder holding the sites (default: ./sites).", envvar="DHANCHA_SITES_DIR"
+            help="Folder holding the sites (default: ./sites).", envvar="SKEMO_SITES_DIR"
         ),
     ] = None,
 ) -> None:
     if sites_dir is not None:
         # The API server reads it too, including uvicorn's reload subprocess.
-        os.environ["DHANCHA_SITES_DIR"] = str(sites_dir.resolve())
+        os.environ["SKEMO_SITES_DIR"] = str(sites_dir.resolve())
 
 
 @app.command("new-site")
@@ -107,7 +107,7 @@ def add_user_command(
         create_user(conn, name, password=password, full_name=full_name, roles=role or [])
     typer.echo(f"Added {name}" + (f" with roles: {', '.join(role)}" if role else ""))
     if not password:
-        typer.echo(f"They can't sign in yet. Set a password: dhancha set-password {name}")
+        typer.echo(f"They can't sign in yet. Set a password: skemo set-password {name}")
 
 
 @app.command("set-password")
@@ -286,7 +286,7 @@ def list_apps_command(site: SiteOption = None) -> None:
         apps = installed_apps(conn)
         owners = app_owners(conn)
     if not apps:
-        typer.echo("No apps installed. Add one with: dhancha install-app <path>")
+        typer.echo("No apps installed. Add one with: skemo install-app <path>")
     for installed in apps:
         doctypes = sorted(name for name, owner in owners.items() if owner == installed.name)
         typer.echo(f"{installed.name} {installed.version}  {installed.path}")
@@ -341,14 +341,14 @@ def serve_command(host: str = "127.0.0.1", port: int = 8000, reload: bool = Fals
     """Run the API server."""
     import uvicorn
 
-    uvicorn.run("dhancha.api:create_app", factory=True, host=host, port=port, reload=reload)
+    uvicorn.run("skemo.api:create_app", factory=True, host=host, port=port, reload=reload)
 
 
 def _engine(site_name: str | None) -> Engine:
     settings = Settings.from_env()
     name = site_name or default_site_name(settings)
     if not name:
-        raise SiteError("no site given and no default site: pass --site or run `dhancha use`")
+        raise SiteError("no site given and no default site: pass --site or run `skemo use`")
     return get_engine(load_site(name, settings), settings)
 
 

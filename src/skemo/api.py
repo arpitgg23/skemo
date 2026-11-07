@@ -31,8 +31,8 @@ from .store import app_owners, load_doctypes
 from .sync import SchemaSyncError
 from .system_tables import sys_schema_log
 
-SITE_HEADER = "X-Dhancha-Site"
-SESSION_COOKIE = "dhancha_session"
+SITE_HEADER = "X-Skemo-Site"
+SESSION_COOKIE = "skemo_session"
 ERROR_STATUS: dict[type[Exception], int] = {
     DocumentNotFound: 404,
     DocumentValidationError: 422,
@@ -62,12 +62,12 @@ class Credentials(BaseModel):
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
-    app = FastAPI(title="Dhancha", version=__version__)
+    app = FastAPI(title="Skemo", version=__version__)
     for error_type, status in ERROR_STATUS.items():
         app.add_exception_handler(error_type, _error_handler(status))
 
     def current_site(request: Request) -> Site:
-        """The X-Dhancha-Site header wins, then a site named like the host, then the default."""
+        """The X-Skemo-Site header wins, then a site named like the host, then the default."""
         requested = request.headers.get(SITE_HEADER)
         if requested:
             try:
@@ -80,7 +80,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     return load_site(name, settings)
                 except SiteError:
                     continue
-        raise HTTPException(404, "No site found. Create one with: dhancha new-site <name>")
+        raise HTTPException(404, "No site found. Create one with: skemo new-site <name>")
 
     CurrentSite = Annotated[Site, Depends(current_site)]
 
@@ -309,8 +309,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(
                 409,
                 f"{name!r} belongs to the app {owner!r}, so its file is the truth. Edit "
-                f"{owner}/doctypes/{name}.json and run `dhancha migrate`, or start the "
-                "server with DHANCHA_DEVELOPER_MODE=1 to edit it here and write the file.",
+                f"{owner}/doctypes/{name}.json and run `skemo migrate`, or start the "
+                "server with SKEMO_DEVELOPER_MODE=1 to edit it here and write the file.",
             )
         result = save_doctypes(engine, [doctype], renames={name: body.renames}, app=owner)
         written = str(app.write_doctype(doctype)) if app else None
@@ -334,7 +334,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(
                 409,
                 f"{name!r} belongs to the app {owner!r}. Delete "
-                f"{owner}/doctypes/{name}.json and run `dhancha migrate` instead.",
+                f"{owner}/doctypes/{name}.json and run `skemo migrate` instead.",
             )
         try:
             result = delete_doctype(engine, name)

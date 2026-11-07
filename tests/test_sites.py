@@ -3,7 +3,7 @@
 import pytest
 from sqlalchemy import inspect, text
 
-from dhancha.sites import (
+from skemo.sites import (
     SiteError,
     db_name_for,
     default_site_name,

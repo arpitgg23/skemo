@@ -9,12 +9,12 @@ from factories import doctype, field
 from fastapi.testclient import TestClient
 from sqlalchemy import insert
 
-from dhancha.api import SESSION_COOKIE, SITE_HEADER, create_app
-from dhancha.auth import ADMIN, create_user
-from dhancha.doctypes import install_app, save_doctype, save_doctypes
-from dhancha.permissions import grant, install_roles
-from dhancha.sites import drop_site, get_engine, new_site, set_default_site
-from dhancha.system_tables import sys_role
+from skemo.api import SESSION_COOKIE, SITE_HEADER, create_app
+from skemo.auth import ADMIN, create_user
+from skemo.doctypes import install_app, save_doctype, save_doctypes
+from skemo.permissions import grant, install_roles
+from skemo.sites import drop_site, get_engine, new_site, set_default_site
+from skemo.system_tables import sys_role
 
 ADMIN_PASSWORD = "an admin password"
 
@@ -51,7 +51,7 @@ def test_doctypes_show_metadata_and_live_columns(client, settings, site):
         get_engine(site, settings), doctype("lead", field("lead_name", reqd=True), module="CRM")
     )
 
-    body = client.get("/api/meta/doctypes", headers={"X-Dhancha-Site": site.name}).json()
+    body = client.get("/api/meta/doctypes", headers={"X-Skemo-Site": site.name}).json()
 
     assert body["site"] == site.name
     [lead] = body["doctypes"]
@@ -161,7 +161,7 @@ def test_a_user_sees_only_what_their_roles_allow(client, anonymous, settings, si
 
 @pytest.mark.parametrize("name", ["nope.localhost", "../../etc"])
 def test_unknown_site_is_a_404(client, name):
-    response = client.get("/api/meta/doctypes", headers={"X-Dhancha-Site": name})
+    response = client.get("/api/meta/doctypes", headers={"X-Skemo-Site": name})
     assert response.status_code == 404
 
 
@@ -324,7 +324,7 @@ def test_an_apps_doctype_is_read_only_in_the_builder(client, app_site):
     assert refused.status_code == 409
     assert "belongs to the app 'field'" in refused.json()["detail"]
     assert client.delete("/api/meta/doctype/visit").status_code == 409
-    # The file is untouched, so `dhancha migrate` would not undo anything.
+    # The file is untouched, so `skemo migrate` would not undo anything.
     assert "Customer" in (folder / "doctypes" / "visit.json").read_text()
 
 

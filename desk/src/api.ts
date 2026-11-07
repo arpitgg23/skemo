@@ -134,7 +134,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    throw new ApiError(0, "Can't reach the API. Is `dhancha serve` running?");
+    throw new ApiError(0, "Can't reach the API. Is `skemo serve` running?");
   }
   if (response.status === 204) return undefined as T;
   const payload = await response.json().catch(() => null);

@@ -4,11 +4,11 @@ import pytest
 from factories import columns, doctype, field, has_table, rows, run
 from sqlalchemy import select
 
-from dhancha.doctypes import DocTypeError, delete_doctype, save_doctype, save_doctypes
-from dhancha.meta import DocField
-from dhancha.store import load_doctypes
-from dhancha.sync import SchemaSyncError
-from dhancha.system_tables import sys_schema_log
+from skemo.doctypes import DocTypeError, delete_doctype, save_doctype, save_doctypes
+from skemo.meta import DocField
+from skemo.store import load_doctypes
+from skemo.sync import SchemaSyncError
+from skemo.system_tables import sys_schema_log
 
 
 def lead(*extra):

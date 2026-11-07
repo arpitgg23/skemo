@@ -3,14 +3,14 @@
 services:
   postgres:
     image: postgres:16
-    container_name: dhancha-pg
+    container_name: skemo-pg
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
       - "5433:5432"
     volumes:
-      - dhancha-pg-data:/var/lib/postgresql/data
+      - skemo-pg-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 3s
@@ -18,4 +18,4 @@ services:
       retries: 20
 
 volumes:
-  dhancha-pg-data:
+  skemo-pg-data:

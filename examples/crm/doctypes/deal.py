@@ -4,7 +4,7 @@ It runs inside the save's transaction: raising, or calling doc.error(), stops th
 leaves the database as it was.
 """
 
-from dhancha.hooks import DocumentHooks, ValidationError
+from skemo.hooks import DocumentHooks, ValidationError
 
 WON_OR_LOST = ("Won", "Lost")
 

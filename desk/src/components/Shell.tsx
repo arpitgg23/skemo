@@ -28,7 +28,7 @@ function Desk() {
     <div className="shell">
       <header className="topbar">
         <Link to="/" className="brand">
-          Dhancha <span className="muted">desk</span>
+          Skemo <span className="muted">desk</span>
         </Link>
         {site && (
           <span className="muted site-name">

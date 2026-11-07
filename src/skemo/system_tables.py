@@ -145,7 +145,7 @@ sys_session = Table(
 def install_system_tables(bind: Engine | Connection) -> list[str]:
     """Bring the system tables up to date and return what was added.
 
-    Creates missing tables, and adds columns a newer Dhancha expects on tables that are
+    Creates missing tables, and adds columns a newer Skemo expects on tables that are
     already there. Only ever additive: nothing is dropped or retyped.
     """
     inspector = inspect(bind)

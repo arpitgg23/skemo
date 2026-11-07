@@ -7,9 +7,9 @@ from decimal import Decimal
 import pytest
 from factories import RecordsClient, doctype, field, rows
 
-from dhancha.doctypes import save_doctypes
-from dhancha.documents import DocumentConflict, DocumentNotFound, DocumentValidationError
-from dhancha.query import QueryError
+from skemo.doctypes import save_doctypes
+from skemo.documents import DocumentConflict, DocumentNotFound, DocumentValidationError
+from skemo.query import QueryError
 
 TODAY = date(2026, 9, 21)
 

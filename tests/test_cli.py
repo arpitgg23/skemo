@@ -4,15 +4,15 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from dhancha.cli import app
+from skemo.cli import app
 
 CRM_APP = Path(__file__).parent.parent / "examples" / "crm"
 TABLES = ("tab_customer", "tab_deal", "tab_lead")
 
 
 def test_cli_end_to_end(monkeypatch, settings, site_name):
-    monkeypatch.setenv("DHANCHA_DB_URL", settings.db_url)
-    monkeypatch.setenv("DHANCHA_SITES_DIR", str(settings.sites_dir))
+    monkeypatch.setenv("SKEMO_DB_URL", settings.db_url)
+    monkeypatch.setenv("SKEMO_SITES_DIR", str(settings.sites_dir))
     runner = CliRunner()
 
     def cli(*args: str) -> str:
@@ -57,8 +57,8 @@ def test_cli_end_to_end(monkeypatch, settings, site_name):
 
 
 def test_users_and_permissions_from_the_cli(monkeypatch, settings, site_name):
-    monkeypatch.setenv("DHANCHA_DB_URL", settings.db_url)
-    monkeypatch.setenv("DHANCHA_SITES_DIR", str(settings.sites_dir))
+    monkeypatch.setenv("SKEMO_DB_URL", settings.db_url)
+    monkeypatch.setenv("SKEMO_SITES_DIR", str(settings.sites_dir))
     runner = CliRunner()
 
     def cli(*args: str) -> str:

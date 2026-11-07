@@ -110,7 +110,7 @@ def set_roles(conn: Connection, name: str, roles: list[str]) -> None:
         if missing:
             raise AuthError(
                 f"There's no role named {missing[0]!r}. Roles are made by granting them "
-                f"something: dhancha grant <doctype> --role {missing[0]} --actions read"
+                f"something: skemo grant <doctype> --role {missing[0]} --actions read"
             )
     conn.execute(delete(sys_user_role).where(sys_user_role.c.user == name))
     if wanted:

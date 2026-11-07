@@ -1,17 +1,18 @@
-# Dhancha
+# Skemo
 
-*ढांचा (dhaancha): Hindi for "framework, structure". Working name.*
+*Skemo, from "schema": describe the form, get the table.*
 
 A metadata-driven framework for building ERPs and CRMs, in the spirit of
 [Frappe](https://frappe.io/framework). You describe a form (a **DocType**): its fields,
-their types, and which ones are required. Dhancha creates and maintains the Postgres table
+their types, and which ones are required. Skemo creates and maintains the Postgres table
 for it and serves a REST API for its records. Later milestones add the screens and a
 drag-and-drop builder, all driven by the same metadata.
 
-> **Status: M6 (apps and hooks) is done.** You can design a DocType by dragging
-> fields, its Postgres table is created or altered when you save, and every screen and
-> endpoint is behind a sign-in with per-DocType permissions. It hasn't been security
-> reviewed or run anywhere but a laptop, so treat it as a work in progress.
+> **Status: M7 (child tables and print formats) is done.** You can design a DocType by
+> dragging fields, its Postgres table is created or altered when you save, a record can
+> hold a grid of rows, every record prints, and every screen and endpoint is behind a
+> sign-in with per-DocType permissions. It hasn't been security reviewed or run anywhere
+> but a laptop, so treat it as a work in progress.
 
 ## How it works
 
@@ -56,10 +57,10 @@ uv venv && uv pip install -e ".[dev]"
 Activate the venv with `.venv\Scripts\activate` on Windows or `source .venv/bin/activate` elsewhere.
 
 ```bash
-dhancha new-site demo.localhost      # new database + an Administrator; prints their password
-dhancha install-app examples/crm     # Customer, Deal, Lead -> tab_customer, tab_deal, tab_lead
-dhancha schema-log                   # every DDL statement that ran
-dhancha serve                        # API on http://127.0.0.1:8000
+skemo new-site demo.localhost      # new database + an Administrator; prints their password
+skemo install-app examples/crm     # Customer, Deal, Lead -> tab_customer, tab_deal, tab_lead
+skemo schema-log                   # every DDL statement that ran
+skemo serve                        # API on http://127.0.0.1:8000
 ```
 
 Then, in a second terminal:
@@ -84,19 +85,19 @@ crm/
 ```
 
 ```bash
-dhancha install-app ./crm    # add it to a site and create its tables
-dhancha migrate              # re-read every installed app and apply the changes
-dhancha list-apps            # what's installed, and which DocTypes came from where
+skemo install-app ./crm    # add it to a site and create its tables
+skemo migrate              # re-read every installed app and apply the changes
+skemo list-apps            # what's installed, and which DocTypes came from where
 ```
 
 Edit a file, commit it, and `migrate` applies it to every site that has the app — that's how
 a change travels from your laptop to a customer's site. A DocType an app ships is **read-only
 in the builder**, because its file is the truth; the builder says so and offers the file name.
-Start the server with `DHANCHA_DEVELOPER_MODE=1` and the builder will edit it anyway and
+Start the server with `SKEMO_DEVELOPER_MODE=1` and the builder will edit it anyway and
 **write the JSON back to the app folder** for you to commit. Deleting a DocType's file and
 running `migrate` leaves its table alone: nothing is dropped behind your back.
 
-`dhancha export-doctype note --to ./crm` moves a DocType you built in the browser into an app.
+`skemo export-doctype note --to ./crm` moves a DocType you built in the browser into an app.
 
 ### Hooks
 
@@ -104,7 +105,7 @@ Next to a DocType's JSON, a module with a class adds the app's own logic:
 
 ```python
 # crm/doctypes/deal.py
-from dhancha.hooks import DocumentHooks, ValidationError
+from skemo.hooks import DocumentHooks, ValidationError
 
 
 class Deal(DocumentHooks):
@@ -140,9 +141,9 @@ Everything except `/api/health` needs a session. Creating a site creates an **Ad
 who is a **System Manager** — the role that may use the builder and reach every record.
 
 ```bash
-dhancha add-user asha@acme.in --password "..." --full-name "Asha Patel" --role Sales
-dhancha grant lead --role Sales --actions read,create,write --if-owner
-dhancha permissions                  # who can do what on this site
+skemo add-user asha@acme.in --password "..." --full-name "Asha Patel" --role Sales
+skemo grant lead --role Sales --actions read,create,write --if-owner
+skemo permissions                  # who can do what on this site
 ```
 
 - **A role is made by granting it something**: `grant` creates the role if it's new.
@@ -153,13 +154,13 @@ dhancha permissions                  # who can do what on this site
   is the same whether or not it exists. Counts and filters obey the same limit.
 - Several roles combine to the most generous: a second role without `--if-owner` lifts the
   limit.
-- `dhancha set-roles <user> --role A --role B` replaces someone's roles;
-  `dhancha set-password <user>` signs them out everywhere.
+- `skemo set-roles <user> --role A --role B` replaces someone's roles;
+  `skemo set-password <user>` signs them out everywhere.
 
 Passwords are hashed with scrypt from the standard library. Signing in sets an HttpOnly
 cookie holding a random token; only the token's SHA-256 hash is stored, so a copy of the
 database can't be used to sign in as anyone. Sessions last 14 days of inactivity. Set
-`DHANCHA_COOKIE_SECURE=1` anywhere the site is served over HTTPS.
+`SKEMO_COOKIE_SECURE=1` anywhere the site is served over HTTPS.
 
 Not covered yet: no password reset or sign-up, no rate limiting on sign-in attempts, no
 field-level permissions, and link autocomplete can confirm that a record of a linked
@@ -205,7 +206,7 @@ the sidebar as soon as you switch back to the browser tab, with no restart or re
   unsaved changes asks first.
 
 **Try a rename.** In `examples/crm/lead.json`, change `"phone"` to `"mobile"`, then run
-`dhancha save-doctype examples/crm/lead.json --rename phone:mobile`. You get one
+`skemo save-doctype examples/crm/lead.json --rename phone:mobile`. You get one
 `RENAME COLUMN`, and the data is kept.
 
 ## DocType JSON
@@ -301,27 +302,27 @@ session everything answers `401`, and `403` means signed in but not allowed.
 - `fields` is comma-separated or `*`; by default you get `name` plus the `in_list_view`
   fields. `order_by` looks like `amount desc`. Listing returns `{"data": [...], "total": n}`.
 
-After upgrading Dhancha, run `dhancha migrate` on existing sites: it adds any new system
+After upgrading Skemo, run `skemo migrate` on existing sites: it adds any new system
 tables and columns, and re-reads the installed apps.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `dhancha new-site NAME` | Create a site database with the system tables and an Administrator |
-| `dhancha install-app PATH` / `list-apps` | Add an app to a site / show what's installed |
-| `dhancha export-doctype NAME --to APP` | Move a DocType built in the browser into an app |
-| `dhancha add-user LOGIN [--role R]` | Add a user |
-| `dhancha set-password LOGIN` / `set-roles LOGIN --role R` | Change a password (signs them out) / replace roles |
-| `dhancha grant DOCTYPE --role R --actions read,write [--if-owner]` | Say what a role may do |
-| `dhancha revoke DOCTYPE ROLE` / `permissions` | Take access away / show who can do what |
-| `dhancha list-sites` / `use NAME` | List sites / set the default |
-| `dhancha save-doctype PATH... [--rename old:new]` | Create or update DocTypes from JSON files or folders |
-| `dhancha delete-doctype NAME --yes` | Delete a DocType; its rows are archived, then the table is dropped |
-| `dhancha migrate` | Bring a site up to date: system tables, the installed apps, then the tables |
-| `dhancha schema-log` | Show recent schema changes |
-| `dhancha serve` | Run the API: records under `/api/resource`, metadata under `/api/meta` |
-| `dhancha drop-site NAME --yes` | Delete a site and its database |
+| `skemo new-site NAME` | Create a site database with the system tables and an Administrator |
+| `skemo install-app PATH` / `list-apps` | Add an app to a site / show what's installed |
+| `skemo export-doctype NAME --to APP` | Move a DocType built in the browser into an app |
+| `skemo add-user LOGIN [--role R]` | Add a user |
+| `skemo set-password LOGIN` / `set-roles LOGIN --role R` | Change a password (signs them out) / replace roles |
+| `skemo grant DOCTYPE --role R --actions read,write [--if-owner]` | Say what a role may do |
+| `skemo revoke DOCTYPE ROLE` / `permissions` | Take access away / show who can do what |
+| `skemo list-sites` / `use NAME` | List sites / set the default |
+| `skemo save-doctype PATH... [--rename old:new]` | Create or update DocTypes from JSON files or folders |
+| `skemo delete-doctype NAME --yes` | Delete a DocType; its rows are archived, then the table is dropped |
+| `skemo migrate` | Bring a site up to date: system tables, the installed apps, then the tables |
+| `skemo schema-log` | Show recent schema changes |
+| `skemo serve` | Run the API: records under `/api/resource`, metadata under `/api/meta` |
+| `skemo drop-site NAME --yes` | Delete a site and its database |
 
 ## Tests
 
@@ -330,7 +331,7 @@ pytest
 ```
 
 Tests run against the Postgres from `docker compose`, and each test gets its own
-throwaway database. Set `DHANCHA_TEST_DB_URL` to use a different server.
+throwaway database. Set `SKEMO_TEST_DB_URL` to use a different server.
 
 The desk's layout and value-conversion logic has unit tests too: `cd desk && npm test`.
 

@@ -6,11 +6,11 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 
-from dhancha.config import Settings
-from dhancha.system_tables import install_system_tables
+from skemo.config import Settings
+from skemo.system_tables import install_system_tables
 
 ADMIN_URL = os.environ.get(
-    "DHANCHA_TEST_DB_URL", "postgresql+psycopg://postgres:postgres@localhost:5433/postgres"
+    "SKEMO_TEST_DB_URL", "postgresql+psycopg://postgres:postgres@localhost:5433/postgres"
 )
 
 
@@ -33,7 +33,7 @@ def admin_engine():
 @pytest.fixture
 def engine(admin_engine):
     """A fresh, throwaway site database with the system tables installed."""
-    name = f"dhancha_test_{uuid.uuid4().hex[:12]}"
+    name = f"skemo_test_{uuid.uuid4().hex[:12]}"
     with admin_engine.connect() as conn:
         conn.execute(text(f"CREATE DATABASE {name}"))
     site_engine = create_engine(make_url(ADMIN_URL).set(database=name))

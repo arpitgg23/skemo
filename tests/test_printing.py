@@ -6,8 +6,8 @@ from decimal import Decimal
 import pytest
 from factories import doctype, field
 
-from dhancha.meta import DocField
-from dhancha.printing import PrintError, day, money, number, render
+from skemo.meta import DocField
+from skemo.printing import PrintError, day, money, number, render
 
 INVOICE = doctype(
     "invoice",

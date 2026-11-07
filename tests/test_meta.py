@@ -4,7 +4,7 @@ import pytest
 from factories import doctype, field
 from pydantic import ValidationError
 
-from dhancha.meta import DocField, DocType
+from skemo.meta import DocField, DocType
 
 
 def test_labels_and_table_come_from_names():

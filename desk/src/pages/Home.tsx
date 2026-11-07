@@ -25,7 +25,7 @@ function AppStructure({ doctypes }: { doctypes: DocType[] }) {
       <section className="panel">
         <h1>No DocTypes yet</h1>
         <p>Create some from JSON, then come back to this tab:</p>
-        <pre>dhancha save-doctype examples/crm</pre>
+        <pre>skemo save-doctype examples/crm</pre>
       </section>
     );
   }

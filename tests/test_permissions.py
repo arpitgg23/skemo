@@ -4,10 +4,10 @@ import pytest
 from factories import doctype, field
 from sqlalchemy import insert
 
-from dhancha.auth import create_user, load_user
-from dhancha.doctypes import save_doctypes
-from dhancha.documents import DocumentNotFound, Records
-from dhancha.permissions import (
+from skemo.auth import create_user, load_user
+from skemo.doctypes import save_doctypes
+from skemo.documents import DocumentNotFound, Records
+from skemo.permissions import (
     SYSTEM_MANAGER,
     PermissionDenied,
     Permissions,
@@ -15,7 +15,7 @@ from dhancha.permissions import (
     install_roles,
     revoke,
 )
-from dhancha.system_tables import sys_role
+from skemo.system_tables import sys_role
 
 
 @pytest.fixture
@@ -126,7 +126,7 @@ def test_two_roles_combine_to_the_most_generous(crm, records_for):
     with crm.begin() as conn:
         grant(conn, "lead", "Sales", ["read"], if_owner=True)
         grant(conn, "lead", "Manager", ["read", "delete"])
-        from dhancha.auth import set_roles
+        from skemo.auth import set_roles
 
         set_roles(conn, "asha@acme.in", ["Sales", "Manager"])
         user = load_user(conn, "asha@acme.in")

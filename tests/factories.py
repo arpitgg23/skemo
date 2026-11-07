@@ -3,8 +3,8 @@
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
-from dhancha.documents import Records
-from dhancha.meta import DocField, DocType
+from skemo.documents import Records
+from skemo.meta import DocField, DocType
 
 
 class RecordsClient:
