@@ -72,13 +72,20 @@ def new_site_command(
     make_default: Annotated[
         bool, typer.Option("--default/--no-default", help="Make it the default site.")
     ] = True,
+    database: Annotated[
+        str | None,
+        typer.Option(
+            help="Install into this existing database instead of creating one. "
+            "Managed Postgres (Supabase, Neon) only lets you use the database it gave you."
+        ),
+    ] = None,
 ) -> None:
     """Create a site: a new Postgres database with the system tables and an Administrator."""
     settings = Settings.from_env()
     generated = admin_password is None
     password = admin_password or secrets.token_urlsafe(12)
     with _errors():
-        site = new_site(name, settings, admin_password=password)
+        site = new_site(name, settings, admin_password=password, database=database)
         if make_default:
             set_default_site(name, settings)
     typer.echo(f"Created site {site.name} (database {site.db_name})")

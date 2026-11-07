@@ -750,6 +750,26 @@ button.danger {
   margin-top: 4px;
 }
 
+/* Only the public demo shows this: how to get in, and that the data is everyone's. */
+.demo-hint {
+  margin: 16px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.demo-hint button.link {
+  width: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .site-name {
   overflow: hidden;
   text-overflow: ellipsis;

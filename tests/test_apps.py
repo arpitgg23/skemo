@@ -1,12 +1,13 @@
 """Apps: DocTypes as files, installing them, and Python hooks running on save."""
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
 from factories import RecordsClient, columns, has_table
 
-from skemo.apps import AppError, app_of, installed_apps, load_app, site_hooks
+from skemo.apps import AppError, app_of, installed_apps, load_app, load_installed, site_hooks
 from skemo.doctypes import install_app, sync_site
 from skemo.documents import DocumentValidationError
 from skemo.store import app_owners, load_doctypes
@@ -203,3 +204,46 @@ def test_the_example_crm_app_installs_and_its_hooks_run(engine):
 
     lost = records.update("deal", deal["name"], {"stage": "Lost"})
     assert lost["probability"] == 0
+
+
+def test_an_apps_location_is_stored_so_it_survives_a_move(engine, tmp_path, monkeypatch):
+    """An absolute path only means anything on the machine that wrote it.
+
+    Checking the same repo out elsewhere — another laptop, a container, a serverless
+    function — has to keep working, so a path inside the working directory is stored
+    relative to it.
+    """
+    project = tmp_path / "project"
+    (project / "apps").mkdir(parents=True)
+    write_app(project / "apps" / "field")
+    monkeypatch.chdir(project)
+
+    install_app(engine, "apps/field")
+
+    with engine.connect() as conn:
+        [stored] = installed_apps(conn)
+    assert stored.path == Path("apps/field")  # not C:/.../tmp/project/apps/field
+    assert not stored.missing
+
+    # The same checkout somewhere else still finds it.
+    moved = tmp_path / "elsewhere"
+    shutil.copytree(project, moved)
+    monkeypatch.chdir(moved)
+    with engine.connect() as conn:
+        [stored] = installed_apps(conn)
+        assert not stored.missing
+        assert load_installed(conn)[0].name == "field"
+
+
+def test_an_app_outside_the_working_directory_is_stored_absolute(engine, tmp_path, monkeypatch):
+    outside = write_app(tmp_path / "outside" / "field")
+    working = tmp_path / "working"
+    working.mkdir()
+    monkeypatch.chdir(working)
+
+    install_app(engine, outside)
+
+    with engine.connect() as conn:
+        [stored] = installed_apps(conn)
+    assert stored.path.is_absolute()
+    assert not stored.missing

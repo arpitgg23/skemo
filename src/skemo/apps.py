@@ -116,10 +116,26 @@ def load_app(path: str | Path) -> App:
     )
 
 
+def portable_path(path: Path) -> str:
+    """How an app's location is stored: relative to the working directory when it's inside it.
+
+    An absolute path only means anything on the machine that wrote it. A site whose app sits
+    in its own repo — the usual case — then breaks the moment that repo is checked out
+    somewhere else: another laptop, a container, a serverless function. Storing
+    "examples/crm" instead of "C:/Users/.../examples/crm" survives all three. Anything
+    outside the working directory is still stored absolute, because nothing else would find
+    it.
+    """
+    try:
+        return path.relative_to(Path.cwd()).as_posix()
+    except ValueError:
+        return str(path)
+
+
 def record_app(conn: Connection, app: App) -> None:
     """Remember that this site uses this app, or update where it lives."""
     stmt = insert(sys_app).values(
-        name=app.name, title=app.title, version=app.version, path=str(app.path)
+        name=app.name, title=app.title, version=app.version, path=portable_path(app.path)
     )
     conn.execute(
         stmt.on_conflict_do_update(

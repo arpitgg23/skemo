@@ -13,6 +13,7 @@ sites/
 # Desk
 desk/node_modules/
 desk/dist/
+desk/.env*.local
 
 # Editors / OS / local tooling
 .claude/launch.json
@@ -20,3 +21,4 @@ desk/dist/
 .idea/
 .DS_Store
 .env
+.vercel/

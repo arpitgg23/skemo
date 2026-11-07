@@ -324,6 +324,56 @@ tables and columns, and re-reads the installed apps.
 | `skemo serve` | Run the API: records under `/api/resource`, metadata under `/api/meta` |
 | `skemo drop-site NAME --yes` | Delete a site and its database |
 
+## Hosting it
+
+Skemo runs anywhere that can reach a Postgres. The repository is set up for **Vercel**
+(the desk as static files, the API as one Python function) with Postgres from **Supabase**
+or any other managed host.
+
+The catch worth knowing before you start: a serverless function has **no writable disk**,
+and a managed Postgres gives you **one database you didn't create**. Two environment
+variables deal with both — `SKEMO_SITE` names the site instead of a folder under `sites/`,
+and `SKEMO_SITE_DB` points it at the database you were given.
+
+**1. Make the database.** On Supabase: new project, then Settings → Database → Connection
+string. Take the **pooled** one (port 6543): a serverless function may be started per
+request, and direct connections run out long before the traffic does. Swap the scheme for
+`postgresql+psycopg://`.
+
+**2. Seed it from your machine**, so the live site has something in it:
+
+```bash
+SKEMO_DB_URL="postgresql+psycopg://...pooler.supabase.com:6543/postgres"     python deploy/seed_demo.py
+```
+
+That installs the system tables, the `examples/crm` app and a few records, and creates a
+demo login. `--reset` empties Skemo's tables and starts again; it never touches a table
+Skemo didn't make. Run it from the repository root.
+
+**3. Import the repository on Vercel** and set these in Settings → Environment Variables:
+
+| Variable | Value |
+| --- | --- |
+| `SKEMO_DB_URL` | the pooled connection string |
+| `SKEMO_SITE` | `demo` |
+| `SKEMO_SITE_DB` | `postgres` (whatever the host called your database) |
+| `SKEMO_COOKIE_SECURE` | `1` |
+| `VITE_DEMO_LOGIN` | `demo@skemo.app / skemo-demo`, to show it on the sign-in page |
+
+`vercel.json` does the rest: it builds the desk, serves it, and sends `/api/...` to
+`api/index.py`.
+
+**Before you point anyone at a public one.** Whoever signs in with the demo login is a
+System Manager, so they can design DocTypes — which is the point, and also means they can
+alter the schema and delete things. Treat the data as disposable and reset it when it gets
+messy. For a demo nobody should be able to change, give the demo user a role with only
+`read`, and keep the Administrator password to yourself:
+
+```bash
+skemo add-user guest@example.com --role Viewer
+skemo grant lead Viewer --read
+```
+
 ## Tests
 
 ```bash

@@ -4,6 +4,11 @@ import { api } from "../api";
 import { Banner } from "../components/Feedback";
 import { usePageTitle } from "../hooks";
 
+/** The public demo's login, as "user / password", set at build time.
+ * Only the hosted demo sets VITE_DEMO_LOGIN; your own site shows nothing. */
+const demo = (import.meta.env.VITE_DEMO_LOGIN ?? "").split("/").map((part) => part.trim());
+const demoLogin = demo.length === 2 && demo[0] && demo[1] ? { user: demo[0], password: demo[1] } : null;
+
 /** Shown instead of the desk whenever nobody is signed in. */
 export function Login() {
   usePageTitle("Sign in");
@@ -60,6 +65,24 @@ export function Login() {
         >
           {signIn.isPending ? "Signing in…" : "Sign in"}
         </button>
+        {demoLogin && (
+          <p className="demo-hint">
+            This is a public demo.{" "}
+            <button
+              type="button"
+              className="link"
+              onClick={() => {
+                setUser(demoLogin.user);
+                setPassword(demoLogin.password);
+              }}
+            >
+              Use the demo login
+            </button>{" "}
+            <span className="muted">
+              ({demoLogin.user} / {demoLogin.password}) — anyone can change the data here.
+            </span>
+          </p>
+        )}
       </form>
     </div>
   );
